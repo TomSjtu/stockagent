@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 
 @dataclass(slots=True)
-class FundamentalInput:
-    """One fiscal year of core financial data."""
+class FundamentalRecord:
+    """One fiscal year of standardized core financial data."""
 
     ticker: str
     company_name: str
@@ -36,5 +35,27 @@ class FundamentalInput:
     # Cash Flow
     operating_cash_flow: float | None = None
     capex: float | None = None
-    free_cash_flow: float | None = None
     dividends_paid: float | None = None
+
+
+@dataclass(slots=True)
+class ProfitabilityMetrics:
+    """Computed profitability ratios for one fiscal year."""
+
+    fiscal_year: int
+    gross_margin: float | None = None
+    operating_margin: float | None = None
+    net_margin: float | None = None
+    roa: float | None = None
+    roe: float | None = None
+    roce: float | None = None
+    rd_ratio: float | None = None
+    sga_ratio: float | None = None
+
+
+@dataclass(slots=True)
+class CashFlowMetrics:
+    """Computed cash flow metrics for one fiscal year."""
+
+    fiscal_year: int
+    free_cash_flow: float | None = None

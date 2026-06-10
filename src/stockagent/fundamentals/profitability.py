@@ -1,23 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from src.data.schemas import FundamentalInput
-
-
-@dataclass(slots=True)
-class ProfitabilityMetrics:
-    """Computed profitability ratios for one fiscal year."""
-
-    fiscal_year: int
-    gross_margin: float | None = None
-    operating_margin: float | None = None
-    net_margin: float | None = None
-    roa: float | None = None
-    roe: float | None = None
-    roce: float | None = None
-    rd_ratio: float | None = None
-    sga_ratio: float | None = None
+from stockagent.financials.models import ProfitabilityMetrics
+from stockagent.fundamentals.inputs import ProfitabilityInput
 
 
 def _safe_divide(numerator: float | None, denominator: float | None) -> float | None:
@@ -26,7 +10,7 @@ def _safe_divide(numerator: float | None, denominator: float | None) -> float | 
     return numerator / denominator
 
 
-def compute_profitability(fi: FundamentalInput) -> ProfitabilityMetrics:
+def compute_profitability(fi: ProfitabilityInput) -> ProfitabilityMetrics:
     """Compute all profitability ratios from a single year's fundamental data."""
     metrics = ProfitabilityMetrics(fiscal_year=fi.fiscal_year)
 
@@ -51,10 +35,10 @@ def compute_profitability(fi: FundamentalInput) -> ProfitabilityMetrics:
 
 
 def compute_profitability_series(
-    fundamentals: list[FundamentalInput],
+    inputs: list[ProfitabilityInput],
 ) -> list[ProfitabilityMetrics]:
     """Compute profitability metrics for multiple years, sorted by fiscal year."""
     return sorted(
-        [compute_profitability(fi) for fi in fundamentals],
+        [compute_profitability(fi) for fi in inputs],
         key=lambda m: m.fiscal_year,
     )
