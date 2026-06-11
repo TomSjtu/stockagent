@@ -59,3 +59,15 @@ class CashFlowMetrics:
 
     fiscal_year: int
     free_cash_flow: float | None = None
+
+
+@dataclass(slots=True)
+class FinancialHealthMetrics:
+    """Computed financial health ratios for one fiscal year."""
+
+    fiscal_year: int
+    equity_ratio: float | None = None
+    liabilities_to_assets: float | None = None
+    current_ratio: float | None = None
+    cash_ratio: float | None = None
+    operating_cash_flow_to_total_liabilities: float | None = None

@@ -52,6 +52,32 @@ class ProfitabilityInput:
             shareholders_equity=record.shareholders_equity,
         )
 
+@dataclass(slots=True, frozen=True)
+class FinancialHealthInput:
+    """Minimum fields needed to compute financial health metrics."""
+
+    fiscal_year: int
+    total_assets: float | None
+    current_assets: float | None
+    cash_and_equivalents: float | None
+    total_liabilities: float | None
+    current_liabilities: float | None
+    shareholders_equity: float | None
+    operating_cash_flow: float | None
+
+    @classmethod
+    def from_record(cls, record: FinancialRecord) -> "FinancialHealthInput":
+        return cls(
+            fiscal_year=record.fiscal_year,
+            total_assets=record.total_assets,
+            current_assets=record.current_assets,
+            cash_and_equivalents=record.cash_and_equivalents,
+            total_liabilities=record.total_liabilities,
+            current_liabilities=record.current_liabilities,
+            shareholders_equity=record.shareholders_equity,
+            operating_cash_flow=record.operating_cash_flow,
+        )
+
 
 def build_profitability_inputs(
     records: list[FinancialRecord],
@@ -63,3 +89,9 @@ def build_cash_flow_inputs(
     records: list[FinancialRecord],
 ) -> list[CashFlowInput]:
     return [CashFlowInput.from_record(record) for record in records]
+
+
+def build_financial_health_inputs(
+    records: list[FinancialRecord],
+) -> list[FinancialHealthInput]:
+    return [FinancialHealthInput.from_record(record) for record in records]
