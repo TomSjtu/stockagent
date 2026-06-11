@@ -71,3 +71,16 @@ class FinancialHealthMetrics:
     current_ratio: float | None = None
     cash_ratio: float | None = None
     operating_cash_flow_to_total_liabilities: float | None = None
+
+
+@dataclass(slots=True)
+class GrowthMetrics:
+    """Computed growth metrics for one fiscal year."""
+
+    fiscal_year: int
+    revenue_growth: float | None = None
+    net_income_growth: float | None = None
+    free_cash_flow_growth: float | None = None
+    revenue_cagr: float | None = None
+    net_income_cagr: float | None = None
+    free_cash_flow_cagr: float | None = None

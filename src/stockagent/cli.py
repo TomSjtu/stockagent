@@ -7,9 +7,11 @@ from edgar import set_identity
 from stockagent.data.providers.edgar import EdgarFinancialsProvider
 from stockagent.fundamentals.cash_flow import compute_cash_flow_series
 from stockagent.fundamentals.financial_health import compute_financial_health_series
+from stockagent.fundamentals.growth import compute_growth_series
 from stockagent.fundamentals.inputs import (
     build_cash_flow_inputs,
     build_financial_health_inputs,
+    build_growth_inputs,
     build_profitability_inputs,
 )
 from stockagent.fundamentals.profitability import compute_profitability_series
@@ -64,10 +66,16 @@ def main() -> None:
     for metrics in financial_health_series:
         financial_health_metrics[metrics.fiscal_year] = metrics
 
+    growth_series = compute_growth_series(build_growth_inputs(records))
+    growth_metrics = {}
+    for metrics in growth_series:
+        growth_metrics[metrics.fiscal_year] = metrics
+
     for record in records:
         cash_flow = cash_flow_metrics.get(record.fiscal_year)
         profitability = profitability_metrics.get(record.fiscal_year)
         financial_health = financial_health_metrics.get(record.fiscal_year)
+        growth = growth_metrics.get(record.fiscal_year)
         free_cash_flow = cash_flow.free_cash_flow if cash_flow else None
 
         print(f"\n=== FY {record.fiscal_year} ===")
@@ -130,4 +138,30 @@ def main() -> None:
         print(
             "    CFO/Liab:     "
             f"{_format_ratio(financial_health.operating_cash_flow_to_total_liabilities) if financial_health else 'None'}"
+        )
+
+        print("  Growth:")
+        print(
+            "    Revenue YoY:  "
+            f"{_format_ratio(growth.revenue_growth) if growth else 'None'}"
+        )
+        print(
+            "    Net Inc YoY:  "
+            f"{_format_ratio(growth.net_income_growth) if growth else 'None'}"
+        )
+        print(
+            "    FCF YoY:      "
+            f"{_format_ratio(growth.free_cash_flow_growth) if growth else 'None'}"
+        )
+        print(
+            "    Revenue CAGR: "
+            f"{_format_ratio(growth.revenue_cagr) if growth else 'None'}"
+        )
+        print(
+            "    Net Inc CAGR: "
+            f"{_format_ratio(growth.net_income_cagr) if growth else 'None'}"
+        )
+        print(
+            "    FCF CAGR:     "
+            f"{_format_ratio(growth.free_cash_flow_cagr) if growth else 'None'}"
         )

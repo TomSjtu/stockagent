@@ -79,6 +79,27 @@ class FinancialHealthInput:
         )
 
 
+@dataclass(slots=True, frozen=True)
+class GrowthInput:
+    """Minimum fields needed to compute growth metrics."""
+
+    fiscal_year: int
+    revenue: float | None
+    net_income: float | None
+    operating_cash_flow: float | None
+    capex: float | None
+
+    @classmethod
+    def from_record(cls, record: FinancialRecord) -> "GrowthInput":
+        return cls(
+            fiscal_year=record.fiscal_year,
+            revenue=record.revenue,
+            net_income=record.net_income,
+            operating_cash_flow=record.operating_cash_flow,
+            capex=record.capex,
+        )
+
+
 def build_profitability_inputs(
     records: list[FinancialRecord],
 ) -> list[ProfitabilityInput]:
@@ -95,3 +116,9 @@ def build_financial_health_inputs(
     records: list[FinancialRecord],
 ) -> list[FinancialHealthInput]:
     return [FinancialHealthInput.from_record(record) for record in records]
+
+
+def build_growth_inputs(
+    records: list[FinancialRecord],
+) -> list[GrowthInput]:
+    return [GrowthInput.from_record(record) for record in records]
