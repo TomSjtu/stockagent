@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 
 @dataclass(slots=True)
-class FundamentalRecord:
+class FinancialRecord:
     """One fiscal year of standardized core financial data."""
 
     ticker: str

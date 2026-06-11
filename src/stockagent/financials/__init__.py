@@ -1,3 +1,3 @@
-from stockagent.financials.models import CashFlowMetrics, FundamentalRecord, ProfitabilityMetrics
+from stockagent.financials.models import CashFlowMetrics, FinancialRecord, ProfitabilityMetrics
 
-__all__ = ["CashFlowMetrics", "FundamentalRecord", "ProfitabilityMetrics"]
+__all__ = ["CashFlowMetrics", "FinancialRecord", "ProfitabilityMetrics"]

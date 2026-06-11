@@ -6,9 +6,9 @@ from collections.abc import Callable
 import pandas as pd
 from edgar import Company
 
-from stockagent.financials.models import FundamentalRecord
+from stockagent.financials.models import FinancialRecord
 
-# XBRL concept -> FundamentalRecord field.
+# XBRL concept -> FinancialRecord field.
 # Concept names are DataFrame index values and are more stable than labels.
 INCOME_CONCEPTS = {
     "RevenueFromContractWithCustomerExcludingAssessedTax": "revenue",
@@ -44,8 +44,8 @@ CASHFLOW_CONCEPTS = {
 }
 
 
-class EdgarFundamentalsProvider:
-    """Fetch standardized annual fundamentals from SEC EDGAR."""
+class EdgarFinancialsProvider:
+    """Fetch standardized annual financial records from SEC EDGAR."""
 
     def __init__(self, company_factory: Callable[[str], Company] = Company) -> None:
         self._company_factory = company_factory
@@ -54,7 +54,7 @@ class EdgarFundamentalsProvider:
         self,
         ticker: str,
         years: int,
-    ) -> list[FundamentalRecord]:
+    ) -> list[FinancialRecord]:
         company = self._company_factory(ticker)
         company_name = company.get_ticker()
 
@@ -68,7 +68,7 @@ class EdgarFundamentalsProvider:
             if fiscal_year is None:
                 continue
 
-            record = FundamentalRecord(
+            record = FinancialRecord(
                 ticker=ticker,
                 company_name=company_name,
                 fiscal_year=fiscal_year,
@@ -96,12 +96,12 @@ def _parse_fiscal_year(col: str) -> int | None:
 
 
 def _fill_from_df(
-    record: FundamentalRecord,
+    record: FinancialRecord,
     df: pd.DataFrame,
     period_col: str,
     concept_map: dict[str, str],
 ) -> None:
-    """Fill FundamentalRecord fields from a DataFrame using concept index mapping."""
+    """Fill FinancialRecord fields from a DataFrame using concept index mapping."""
     for concept, field_name in concept_map.items():
         if concept not in df.index:
             continue

@@ -4,7 +4,7 @@ import argparse
 
 from edgar import set_identity
 
-from stockagent.data.providers.edgar import EdgarFundamentalsProvider
+from stockagent.data.providers.edgar import EdgarFinancialsProvider
 from stockagent.fundamentals.cash_flow import compute_cash_flow_series
 from stockagent.fundamentals.inputs import build_cash_flow_inputs
 
@@ -16,7 +16,7 @@ def main() -> None:
 
     set_identity("Tom stockagent@gmail.com")
 
-    results = EdgarFundamentalsProvider().fetch_annual_records(args.ticker.upper(), years=3)
+    results = EdgarFinancialsProvider().fetch_annual_records(args.ticker.upper(), years=3)
     cash_flow_metrics = {
         metrics.fiscal_year: metrics
         for metrics in compute_cash_flow_series(build_cash_flow_inputs(results))

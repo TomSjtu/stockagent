@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import unittest
 
-from stockagent.financials.models import FundamentalRecord
+from stockagent.financials.models import FinancialRecord
 from stockagent.fundamentals.cash_flow import compute_cash_flow, compute_cash_flow_series
 from stockagent.fundamentals.inputs import CashFlowInput, build_cash_flow_inputs
 
 
 class CashFlowInputTest(unittest.TestCase):
     def test_from_record_maps_cash_flow_fields(self) -> None:
-        record = FundamentalRecord(
+        record = FinancialRecord(
             ticker="FAKE",
             company_name="Fake Inc.",
             fiscal_year=2024,
@@ -49,8 +49,8 @@ class CashFlowMetricsTest(unittest.TestCase):
 
     def test_compute_cash_flow_series_sorts_by_fiscal_year(self) -> None:
         records = [
-            FundamentalRecord("FAKE", "Fake Inc.", 2024, operating_cash_flow=35.0, capex=10.0),
-            FundamentalRecord("FAKE", "Fake Inc.", 2023, operating_cash_flow=25.0, capex=8.0),
+            FinancialRecord("FAKE", "Fake Inc.", 2024, operating_cash_flow=35.0, capex=10.0),
+            FinancialRecord("FAKE", "Fake Inc.", 2023, operating_cash_flow=25.0, capex=8.0),
         ]
 
         inputs = build_cash_flow_inputs(records)

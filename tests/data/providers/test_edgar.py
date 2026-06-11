@@ -4,7 +4,7 @@ import unittest
 
 import pandas as pd
 
-from stockagent.data.providers.edgar import EdgarFundamentalsProvider
+from stockagent.data.providers.edgar import EdgarFinancialsProvider
 
 
 class FakeCompany:
@@ -53,9 +53,9 @@ class FakeCompany:
         )
 
 
-class EdgarFundamentalsProviderTest(unittest.TestCase):
+class EdgarFinancialsProviderTest(unittest.TestCase):
     def test_fetch_annual_records_maps_edgar_dataframes(self) -> None:
-        provider = EdgarFundamentalsProvider(company_factory=FakeCompany)
+        provider = EdgarFinancialsProvider(company_factory=FakeCompany)
 
         records = provider.fetch_annual_records("FAKE", years=2)
 
