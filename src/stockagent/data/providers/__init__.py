@@ -1,4 +1,4 @@
-from stockagent.data.providers.base import FundamentalsProvider
-from stockagent.data.providers.edgar import EdgarFundamentalsProvider
+from stockagent.data.providers.base import FinancialsProvider
+from stockagent.data.providers.edgar import EdgarFinancialsProvider
 
-__all__ = ["EdgarFundamentalsProvider", "FundamentalsProvider"]
+__all__ = ["EdgarFinancialsProvider", "FinancialsProvider"]

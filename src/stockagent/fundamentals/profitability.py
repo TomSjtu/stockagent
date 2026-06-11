@@ -11,7 +11,7 @@ def _safe_divide(numerator: float | None, denominator: float | None) -> float | 
 
 
 def compute_profitability(fi: ProfitabilityInput) -> ProfitabilityMetrics:
-    """Compute all profitability ratios from a single year's fundamental data."""
+    """Compute all profitability ratios from a single year's financial data."""
     metrics = ProfitabilityMetrics(fiscal_year=fi.fiscal_year)
 
     # Margins

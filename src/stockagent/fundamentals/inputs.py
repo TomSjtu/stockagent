@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from stockagent.financials.models import FundamentalRecord
+from stockagent.financials.models import FinancialRecord
 
 
 @dataclass(slots=True, frozen=True)
@@ -14,7 +14,7 @@ class CashFlowInput:
     capex: float | None
 
     @classmethod
-    def from_record(cls, record: FundamentalRecord) -> "CashFlowInput":
+    def from_record(cls, record: FinancialRecord) -> "CashFlowInput":
         return cls(
             fiscal_year=record.fiscal_year,
             operating_cash_flow=record.operating_cash_flow,
@@ -38,7 +38,7 @@ class ProfitabilityInput:
     shareholders_equity: float | None
 
     @classmethod
-    def from_record(cls, record: FundamentalRecord) -> "ProfitabilityInput":
+    def from_record(cls, record: FinancialRecord) -> "ProfitabilityInput":
         return cls(
             fiscal_year=record.fiscal_year,
             revenue=record.revenue,
@@ -54,12 +54,12 @@ class ProfitabilityInput:
 
 
 def build_profitability_inputs(
-    records: list[FundamentalRecord],
+    records: list[FinancialRecord],
 ) -> list[ProfitabilityInput]:
     return [ProfitabilityInput.from_record(record) for record in records]
 
 
 def build_cash_flow_inputs(
-    records: list[FundamentalRecord],
+    records: list[FinancialRecord],
 ) -> list[CashFlowInput]:
     return [CashFlowInput.from_record(record) for record in records]

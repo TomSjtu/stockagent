@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from stockagent.financials.models import FundamentalRecord
+from stockagent.financials.models import FinancialRecord
 from stockagent.fundamentals.inputs import ProfitabilityInput, build_profitability_inputs
 from stockagent.fundamentals.profitability import (
     compute_profitability,
@@ -12,7 +12,7 @@ from stockagent.fundamentals.profitability import (
 
 class ProfitabilityInputTest(unittest.TestCase):
     def test_from_record_maps_only_profitability_fields(self) -> None:
-        record = FundamentalRecord(
+        record = FinancialRecord(
             ticker="FAKE",
             company_name="Fake Inc.",
             fiscal_year=2024,
@@ -95,8 +95,8 @@ class ProfitabilityMetricsTest(unittest.TestCase):
 
     def test_compute_profitability_series_sorts_by_fiscal_year(self) -> None:
         records = [
-            FundamentalRecord("FAKE", "Fake Inc.", 2024, revenue=100.0),
-            FundamentalRecord("FAKE", "Fake Inc.", 2023, revenue=90.0),
+            FinancialRecord("FAKE", "Fake Inc.", 2024, revenue=100.0),
+            FinancialRecord("FAKE", "Fake Inc.", 2023, revenue=90.0),
         ]
 
         inputs = build_profitability_inputs(records)
