@@ -53,6 +53,58 @@ class FakeCompany:
         )
 
 
+class AliasFallbackCompany(FakeCompany):
+    def income_statement(self, **_: object) -> pd.DataFrame:
+        return pd.DataFrame(
+            {"FY 2024": [100.0, 40.0]},
+            index=[
+                "Revenues",
+                "NetIncomeLoss",
+            ],
+        )
+
+
+class PrimaryPriorityCompany(FakeCompany):
+    def income_statement(self, **_: object) -> pd.DataFrame:
+        return pd.DataFrame(
+            {"FY 2024": [100.0, 90.0]},
+            index=[
+                "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "Revenues",
+            ],
+        )
+
+
+class NullFallbackCompany(FakeCompany):
+    def income_statement(self, **_: object) -> pd.DataFrame:
+        return pd.DataFrame(
+            {"FY 2024": [None, 95.0]},
+            index=[
+                "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "Revenues",
+            ],
+        )
+
+
+class DuplicateConceptCompany(FakeCompany):
+    def income_statement(self, **_: object) -> pd.DataFrame:
+        return pd.DataFrame(
+            {"FY 2024": [None, 105.0]},
+            index=[
+                "Revenues",
+                "Revenues",
+            ],
+        )
+
+
+class MissingConceptCompany(FakeCompany):
+    def income_statement(self, **_: object) -> pd.DataFrame:
+        return pd.DataFrame(
+            {"FY 2024": [20.0]},
+            index=["NetIncomeLoss"],
+        )
+
+
 class EdgarFinancialsProviderTest(unittest.TestCase):
     def test_fetch_annual_records_maps_edgar_dataframes(self) -> None:
         provider = EdgarFinancialsProvider(company_factory=FakeCompany)
@@ -69,6 +121,42 @@ class EdgarFinancialsProviderTest(unittest.TestCase):
         self.assertEqual(records[1].shareholders_equity, 100.0)
         self.assertEqual(records[1].operating_cash_flow, 35.0)
         self.assertEqual(records[1].capex, 10.0)
+
+    def test_fetch_annual_records_uses_alias_when_primary_concept_missing(self) -> None:
+        provider = EdgarFinancialsProvider(company_factory=AliasFallbackCompany)
+
+        records = provider.fetch_annual_records("FAKE", years=1)
+
+        self.assertEqual(records[0].revenue, 100.0)
+
+    def test_fetch_annual_records_prefers_primary_concept(self) -> None:
+        provider = EdgarFinancialsProvider(company_factory=PrimaryPriorityCompany)
+
+        records = provider.fetch_annual_records("FAKE", years=1)
+
+        self.assertEqual(records[0].revenue, 100.0)
+
+    def test_fetch_annual_records_falls_back_when_primary_value_is_null(self) -> None:
+        provider = EdgarFinancialsProvider(company_factory=NullFallbackCompany)
+
+        records = provider.fetch_annual_records("FAKE", years=1)
+
+        self.assertEqual(records[0].revenue, 95.0)
+
+    def test_fetch_annual_records_uses_first_non_null_duplicate_concept(self) -> None:
+        provider = EdgarFinancialsProvider(company_factory=DuplicateConceptCompany)
+
+        records = provider.fetch_annual_records("FAKE", years=1)
+
+        self.assertEqual(records[0].revenue, 105.0)
+
+    def test_fetch_annual_records_keeps_field_none_when_all_concepts_missing(self) -> None:
+        provider = EdgarFinancialsProvider(company_factory=MissingConceptCompany)
+
+        records = provider.fetch_annual_records("FAKE", years=1)
+
+        self.assertIsNone(records[0].revenue)
+        self.assertEqual(records[0].net_income, 20.0)
 
 
 if __name__ == "__main__":

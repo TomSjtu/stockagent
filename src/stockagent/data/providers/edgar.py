@@ -8,39 +8,49 @@ from edgar import Company
 
 from stockagent.financials.models import FinancialRecord
 
-# XBRL concept -> FinancialRecord field.
+FieldConceptMap = dict[str, tuple[str, ...]]
+
+# FinancialRecord field -> prioritized XBRL concepts.
 # Concept names are DataFrame index values and are more stable than labels.
-INCOME_CONCEPTS = {
-    "RevenueFromContractWithCustomerExcludingAssessedTax": "revenue",
-    "Revenues": "revenue",
-    "CostOfGoodsAndServicesSold": "cost_of_sales",
-    "CostOfRevenue": "cost_of_sales",
-    "GrossProfit": "gross_profit",
-    "ResearchAndDevelopmentExpense": "rd_expense",
-    "SellingGeneralAndAdministrativeExpense": "sga_expense",
-    "OperatingExpenses": "operating_expenses",
-    "OperatingIncomeLoss": "operating_income",
-    "NetIncomeLoss": "net_income",
-    "EarningsPerShareBasic": "eps_basic",
-    "EarningsPerShareDiluted": "eps_diluted",
+INCOME_FIELD_CONCEPTS: FieldConceptMap = {
+    "revenue": (
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "Revenues",
+    ),
+    "cost_of_sales": (
+        "CostOfGoodsAndServicesSold",
+        "CostOfRevenue",
+    ),
+    "gross_profit": ("GrossProfit",),
+    "rd_expense": ("ResearchAndDevelopmentExpense",),
+    "sga_expense": ("SellingGeneralAndAdministrativeExpense",),
+    "operating_expenses": ("OperatingExpenses",),
+    "operating_income": ("OperatingIncomeLoss",),
+    "net_income": ("NetIncomeLoss",),
+    "eps_basic": ("EarningsPerShareBasic",),
+    "eps_diluted": ("EarningsPerShareDiluted",),
 }
 
-BALANCE_CONCEPTS = {
-    "Assets": "total_assets",
-    "AssetsCurrent": "current_assets",
-    "CashAndCashEquivalentsAtCarryingValue": "cash_and_equivalents",
-    "Liabilities": "total_liabilities",
-    "LiabilitiesCurrent": "current_liabilities",
-    "LongTermDebtNoncurrent": "long_term_debt",
-    "LongTermDebt": "long_term_debt",
-    "StockholdersEquity": "shareholders_equity",
+BALANCE_FIELD_CONCEPTS: FieldConceptMap = {
+    "total_assets": ("Assets",),
+    "current_assets": ("AssetsCurrent",),
+    "cash_and_equivalents": ("CashAndCashEquivalentsAtCarryingValue",),
+    "total_liabilities": ("Liabilities",),
+    "current_liabilities": ("LiabilitiesCurrent",),
+    "long_term_debt": (
+        "LongTermDebtNoncurrent",
+        "LongTermDebt",
+    ),
+    "shareholders_equity": ("StockholdersEquity",),
 }
 
-CASHFLOW_CONCEPTS = {
-    "NetCashProvidedByUsedInOperatingActivities": "operating_cash_flow",
-    "PaymentsToAcquirePropertyPlantAndEquipment": "capex",
-    "PaymentsOfDividends": "dividends_paid",
-    "PaymentsOfDividendsCommonStock": "dividends_paid",
+CASHFLOW_FIELD_CONCEPTS: FieldConceptMap = {
+    "operating_cash_flow": ("NetCashProvidedByUsedInOperatingActivities",),
+    "capex": ("PaymentsToAcquirePropertyPlantAndEquipment",),
+    "dividends_paid": (
+        "PaymentsOfDividends",
+        "PaymentsOfDividendsCommonStock",
+    ),
 }
 
 
@@ -74,9 +84,9 @@ class EdgarFinancialsProvider:
                 fiscal_year=fiscal_year,
             )
 
-            _fill_from_df(record, income, col, INCOME_CONCEPTS)
-            _fill_from_df(record, balance, col, BALANCE_CONCEPTS)
-            _fill_from_df(record, cashflow, col, CASHFLOW_CONCEPTS)
+            _fill_from_df(record, income, col, INCOME_FIELD_CONCEPTS)
+            _fill_from_df(record, balance, col, BALANCE_FIELD_CONCEPTS)
+            _fill_from_df(record, cashflow, col, CASHFLOW_FIELD_CONCEPTS)
 
             records.append(record)
 
@@ -99,14 +109,49 @@ def _fill_from_df(
     record: FinancialRecord,
     df: pd.DataFrame,
     period_col: str,
-    concept_map: dict[str, str],
+    field_concepts: FieldConceptMap,
 ) -> None:
     """Fill FinancialRecord fields from a DataFrame using concept index mapping."""
-    for concept, field_name in concept_map.items():
-        if concept not in df.index:
-            continue
+    for field_name, concepts in field_concepts.items():
         if getattr(record, field_name) is not None:
             continue
-        value = df.at[concept, period_col]
-        if pd.notna(value):
-            setattr(record, field_name, float(value))
+
+        value = _first_available_value(df, period_col, concepts)
+        if value is not None:
+            setattr(record, field_name, value)
+
+
+def _first_available_value(
+    df: pd.DataFrame,
+    period_col: str,
+    concepts: tuple[str, ...],
+) -> float | None:
+    if period_col not in df.columns:
+        return None
+
+    for concept in concepts:
+        if concept not in df.index:
+            continue
+
+        value = df.loc[concept, period_col]
+        if isinstance(value, pd.Series):
+            for item in value:
+                parsed = _to_float_or_none(item)
+                if parsed is not None:
+                    return parsed
+            continue
+
+        parsed = _to_float_or_none(value)
+        if parsed is not None:
+            return parsed
+
+    return None
+
+
+def _to_float_or_none(value: object) -> float | None:
+    if pd.isna(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
