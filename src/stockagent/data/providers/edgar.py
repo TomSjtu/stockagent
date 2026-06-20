@@ -6,6 +6,11 @@ from collections.abc import Callable
 import pandas as pd
 from edgar import Company
 
+from stockagent.data.errors import (
+    NoDataError,
+    ProviderError,
+    ProviderResponseError,
+)
 from stockagent.financials.models import FinancialRecord
 
 FieldConceptMap = dict[str, tuple[str, ...]]
@@ -57,10 +62,37 @@ CASHFLOW_FIELD_CONCEPTS: FieldConceptMap = {
 class EdgarFinancialsProvider:
     """Fetch standardized annual financial records from SEC EDGAR."""
 
+    provider_name = "edgar"
+
     def __init__(self, company_factory: Callable[[str], Company] = Company) -> None:
         self._company_factory = company_factory
 
     def fetch_annual_records(
+        self,
+        ticker: str,
+        years: int,
+    ) -> list[FinancialRecord]:
+        try:
+            records = self._fetch_annual_records(ticker, years)
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderResponseError(
+                ticker=ticker,
+                provider=self.provider_name,
+                detail=str(exc),
+            ) from exc
+
+        if not records:
+            raise NoDataError(
+                ticker=ticker,
+                provider=self.provider_name,
+                detail="no annual fiscal periods were parsed",
+            )
+        records.sort(key=lambda record: record.fiscal_year)
+        return records
+
+    def _fetch_annual_records(
         self,
         ticker: str,
         years: int,
@@ -90,7 +122,6 @@ class EdgarFinancialsProvider:
 
             records.append(record)
 
-        records.sort(key=lambda record: record.fiscal_year)
         return records
 
 

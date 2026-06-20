@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
 from stockagent.config import AppConfig, RuntimeOptions
+from stockagent.data.errors import NoDataError
 from stockagent.data.providers.base import FinancialsProvider
 from stockagent.financials.models import (
     CashFlowMetrics,
@@ -66,6 +67,13 @@ def run_stock_analysis(
         options.ticker.upper(),
         years=options.years,
     )
+    if not records:
+        provider_name = provider.__class__.__name__
+        raise NoDataError(
+            ticker=options.ticker.upper(),
+            provider=provider_name,
+            detail="provider returned no annual records",
+        )
 
     return AnalysisResult(
         ticker=options.ticker.upper(),

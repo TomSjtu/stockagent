@@ -4,6 +4,7 @@ import unittest
 
 import pandas as pd
 
+from stockagent.data.errors import NoDataError, ProviderResponseError
 from stockagent.data.providers.edgar import EdgarFinancialsProvider
 
 
@@ -105,6 +106,16 @@ class MissingConceptCompany(FakeCompany):
         )
 
 
+class EmptyPeriodsCompany(FakeCompany):
+    def income_statement(self, **_: object) -> pd.DataFrame:
+        return pd.DataFrame({"TTM": [100.0]}, index=["Revenues"])
+
+
+class BrokenCompany(FakeCompany):
+    def income_statement(self, **_: object) -> pd.DataFrame:
+        raise RuntimeError("edgar response changed")
+
+
 class EdgarFinancialsProviderTest(unittest.TestCase):
     def test_fetch_annual_records_maps_edgar_dataframes(self) -> None:
         provider = EdgarFinancialsProvider(company_factory=FakeCompany)
@@ -157,6 +168,25 @@ class EdgarFinancialsProviderTest(unittest.TestCase):
 
         self.assertIsNone(records[0].revenue)
         self.assertEqual(records[0].net_income, 20.0)
+
+    def test_fetch_annual_records_raises_no_data_when_no_fiscal_periods(self) -> None:
+        provider = EdgarFinancialsProvider(company_factory=EmptyPeriodsCompany)
+
+        with self.assertRaises(NoDataError) as context:
+            provider.fetch_annual_records("FAKE", years=1)
+
+        self.assertEqual(context.exception.ticker, "FAKE")
+        self.assertEqual(context.exception.provider, "edgar")
+
+    def test_fetch_annual_records_wraps_unexpected_provider_errors(self) -> None:
+        provider = EdgarFinancialsProvider(company_factory=BrokenCompany)
+
+        with self.assertRaises(ProviderResponseError) as context:
+            provider.fetch_annual_records("FAKE", years=1)
+
+        self.assertEqual(context.exception.ticker, "FAKE")
+        self.assertEqual(context.exception.provider, "edgar")
+        self.assertIn("edgar response changed", context.exception.detail)
 
 
 if __name__ == "__main__":

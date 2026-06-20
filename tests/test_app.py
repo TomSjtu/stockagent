@@ -4,6 +4,7 @@ import unittest
 
 from stockagent.app import run_stock_analysis
 from stockagent.config import AppConfig, RuntimeOptions
+from stockagent.data.errors import NoDataError
 from stockagent.financials.models import FinancialRecord
 
 
@@ -51,6 +52,15 @@ class FakeProvider:
         ]
 
 
+class EmptyProvider:
+    def fetch_annual_records(
+        self,
+        ticker: str,
+        years: int,
+    ) -> list[FinancialRecord]:
+        return []
+
+
 class RunStockAnalysisTest(unittest.TestCase):
     def test_run_stock_analysis_builds_all_default_sections(self) -> None:
         provider = FakeProvider()
@@ -80,6 +90,26 @@ class RunStockAnalysisTest(unittest.TestCase):
         self.assertAlmostEqual(result.profitability[2024].gross_margin, 0.4)
         self.assertAlmostEqual(result.financial_health[2024].current_ratio, 2.0)
         self.assertAlmostEqual(result.growth[2024].revenue_growth, 0.2)
+
+    def test_run_stock_analysis_raises_no_data_when_provider_returns_empty_records(
+        self,
+    ) -> None:
+        options = RuntimeOptions(
+            ticker="fake",
+            years=2,
+        )
+        config = AppConfig(edgar_identity="tester@example.com")
+
+        with self.assertRaises(NoDataError) as context:
+            run_stock_analysis(
+                options,
+                config,
+                provider=EmptyProvider(),
+                identity_setter=lambda _: None,
+            )
+
+        self.assertEqual(context.exception.ticker, "FAKE")
+        self.assertEqual(context.exception.provider, "EmptyProvider")
 
 
 if __name__ == "__main__":
