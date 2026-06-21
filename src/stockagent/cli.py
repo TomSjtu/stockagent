@@ -7,8 +7,7 @@ from pathlib import Path
 from stockagent.app import run_stock_analysis
 from stockagent.config import RuntimeOptions, default_output_dir, load_app_config
 from stockagent.errors import StockAgentError
-from stockagent.report.builder import build_report
-from stockagent.report.writer import write_report
+from stockagent.report.generator import generate_report
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,13 +48,7 @@ def main() -> None:
         config = load_app_config()
         options = parse_args()
         result = run_stock_analysis(options, config)
-        output = build_report(result, options.report_format)
-        output_path = write_report(
-            result.ticker,
-            output,
-            report_format=options.report_format,
-            output_dir=options.output_dir,
-        )
+        output_path = generate_report(result, options)
         output = f"Report written to {output_path}"
     except StockAgentError as exc:
         raise SystemExit(f"Error: {exc}") from exc
