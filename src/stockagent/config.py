@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
-ReportFormat = Literal["text", "md", "html", "pdf"]
+ReportFormat = Literal["md", "html", "pdf"]
+
+
+def default_output_dir() -> Path:
+    return Path.cwd() / "output"
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -15,7 +21,8 @@ class AppConfig:
 class RuntimeOptions:
     ticker: str
     years: int
-    report_format: ReportFormat = "text"
+    report_format: ReportFormat = "md"
+    output_dir: Path = field(default_factory=default_output_dir)
 
 
 def load_app_config() -> AppConfig:

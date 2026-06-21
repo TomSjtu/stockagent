@@ -10,7 +10,11 @@ from stockagent.financials.models import (
     GrowthMetrics,
     ProfitabilityMetrics,
 )
-from stockagent.report.builder import build_html_report, build_markdown_report, build_report, build_text_report
+from stockagent.report.builder import (
+    build_html_report,
+    build_markdown_report,
+    build_report,
+)
 
 
 class ReportBuilderTest(unittest.TestCase):
@@ -57,30 +61,25 @@ class ReportBuilderTest(unittest.TestCase):
             },
         )
 
-    def test_build_text_report_renders_selected_sections(self) -> None:
-        output = build_text_report(self.result)
-
-        self.assertIn("Ticker: FAKE", output)
-        self.assertIn("=== FY 2024 ===", output)
-        self.assertIn("Cash Flow:", output)
-        self.assertIn("Profitability:", output)
-        self.assertIn("Financial Health:", output)
-        self.assertIn("Growth:", output)
-        self.assertIn("20", output)
-
     def test_build_markdown_report_renders_heading(self) -> None:
         output = build_markdown_report(self.result)
 
-        self.assertEqual(output, "")
+        self.assertIn("# FAKE Stock Analysis", output)
+        self.assertIn("## FY 2024", output)
+        self.assertIn("### Financials", output)
+        self.assertIn("| Revenue | 120 |", output)
+        self.assertIn("### Profitability", output)
+        self.assertIn("| Gross Margin | 40.00% |", output)
 
     def test_build_html_report_renders_html_shell(self) -> None:
         output = build_html_report(self.result)
 
         self.assertEqual(output, "")
 
-    def test_build_report_raises_for_markdown(self) -> None:
-        with self.assertRaises(NotImplementedError):
-            build_report(self.result, "md")
+    def test_build_report_renders_markdown(self) -> None:
+        output = build_report(self.result, "md")
+
+        self.assertIn("# FAKE Stock Analysis", output)
 
     def test_build_report_raises_for_html(self) -> None:
         with self.assertRaises(NotImplementedError):

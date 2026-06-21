@@ -5,10 +5,8 @@ from stockagent.config import ReportFormat
 
 
 def build_report(result: AnalysisResult, report_format: ReportFormat) -> str:
-    if report_format == "text":
-        return build_text_report(result)
     if report_format == "md":
-        raise NotImplementedError("Markdown report is not implemented yet.")
+        return build_markdown_report(result)
     if report_format == "html":
         raise NotImplementedError("HTML report is not implemented yet.")
     if report_format == "pdf":
@@ -16,128 +14,112 @@ def build_report(result: AnalysisResult, report_format: ReportFormat) -> str:
     raise ValueError(f"Unsupported report format: {report_format}")
 
 
-def build_text_report(result: AnalysisResult) -> str:
-    lines: list[str] = [f"Ticker: {result.ticker}"]
+def build_markdown_report(result: AnalysisResult) -> str:
+    lines: list[str] = [f"# {result.ticker} Stock Analysis", ""]
 
     for record in result.records:
-        lines.append(f"\n=== FY {record.fiscal_year} ===")
-        lines.append(f"  Revenue:        {_format_number(record.revenue)}")
-        lines.append(f"  Net Income:     {_format_number(record.net_income)}")
-        lines.append(f"  Gross Profit:   {_format_number(record.gross_profit)}")
-        lines.append(f"  Total Assets:   {_format_number(record.total_assets)}")
-        lines.append(f"  Total Liab:     {_format_number(record.total_liabilities)}")
-        lines.append(f"  Equity:         {_format_number(record.shareholders_equity)}")
-        lines.append(f"  Op Cash Flow:   {_format_number(record.operating_cash_flow)}")
-        lines.append(f"  EPS Basic:      {record.eps_basic if record.eps_basic is not None else 'None'}")
+        lines.extend(
+            [
+                f"## FY {record.fiscal_year}",
+                "",
+                "### Financials",
+                "",
+                "| Metric | Value |",
+                "|---|---:|",
+                f"| Revenue | {_format_markdown_number(record.revenue)} |",
+                f"| Gross Profit | {_format_markdown_number(record.gross_profit)} |",
+                f"| Net Income | {_format_markdown_number(record.net_income)} |",
+                f"| Total Assets | {_format_markdown_number(record.total_assets)} |",
+                f"| Total Liabilities | {_format_markdown_number(record.total_liabilities)} |",
+                f"| Shareholders' Equity | {_format_markdown_number(record.shareholders_equity)} |",
+                f"| Operating Cash Flow | {_format_markdown_number(record.operating_cash_flow)} |",
+                f"| EPS Basic | {_format_markdown_number(record.eps_basic)} |",
+                "",
+            ]
+        )
 
         cash_flow = result.cash_flow.get(record.fiscal_year)
-        lines.append("  Cash Flow:")
-        lines.append(
-            "    FCF:          "
-            f"{_format_number(cash_flow.free_cash_flow) if cash_flow else 'None'}"
+        lines.extend(
+            [
+                "### Cash Flow",
+                "",
+                "| Metric | Value |",
+                "|---|---:|",
+                f"| Free Cash Flow | {_format_markdown_number(cash_flow.free_cash_flow if cash_flow else None)} |",
+                "",
+            ]
         )
 
         profitability = result.profitability.get(record.fiscal_year)
-        lines.append("  Profitability:")
-        lines.append(
-            "    Gross Margin: "
-            f"{_format_ratio(profitability.gross_margin) if profitability else 'None'}"
-        )
-        lines.append(
-            "    Operating Margin: "
-            f"{_format_ratio(profitability.operating_margin) if profitability else 'None'}"
-        )
-        lines.append(
-            "    Net Margin:   "
-            f"{_format_ratio(profitability.net_margin) if profitability else 'None'}"
-        )
-        lines.append(
-            "    ROA:          "
-            f"{_format_ratio(profitability.roa) if profitability else 'None'}"
-        )
-        lines.append(
-            "    ROE:          "
-            f"{_format_ratio(profitability.roe) if profitability else 'None'}"
-        )
-        lines.append(
-            "    ROCE:         "
-            f"{_format_ratio(profitability.roce) if profitability else 'None'}"
+        lines.extend(
+            [
+                "### Profitability",
+                "",
+                "| Metric | Value |",
+                "|---|---:|",
+                f"| Gross Margin | {_format_markdown_ratio(profitability.gross_margin if profitability else None)} |",
+                f"| Operating Margin | {_format_markdown_ratio(profitability.operating_margin if profitability else None)} |",
+                f"| Net Margin | {_format_markdown_ratio(profitability.net_margin if profitability else None)} |",
+                f"| ROA | {_format_markdown_ratio(profitability.roa if profitability else None)} |",
+                f"| ROE | {_format_markdown_ratio(profitability.roe if profitability else None)} |",
+                f"| ROCE | {_format_markdown_ratio(profitability.roce if profitability else None)} |",
+                "",
+            ]
         )
 
         financial_health = result.financial_health.get(record.fiscal_year)
-        lines.append("  Financial Health:")
-        lines.append(
-            "    Equity Ratio: "
-            f"{_format_ratio(financial_health.equity_ratio) if financial_health else 'None'}"
-        )
-        lines.append(
-            "    Liab/Assets:  "
-            f"{_format_ratio(financial_health.liabilities_to_assets) if financial_health else 'None'}"
-        )
-        lines.append(
-            "    Current Ratio:"
-            f"{_format_multiple(financial_health.current_ratio) if financial_health else 'None'}"
-        )
-        lines.append(
-            "    Cash Ratio:   "
-            f"{_format_multiple(financial_health.cash_ratio) if financial_health else 'None'}"
-        )
-        lines.append(
-            "    CFO/Liab:     "
-            f"{_format_ratio(financial_health.operating_cash_flow_to_total_liabilities) if financial_health else 'None'}"
+        lines.extend(
+            [
+                "### Financial Health",
+                "",
+                "| Metric | Value |",
+                "|---|---:|",
+                f"| Equity Ratio | {_format_markdown_ratio(financial_health.equity_ratio if financial_health else None)} |",
+                f"| Liabilities / Assets | {_format_markdown_ratio(financial_health.liabilities_to_assets if financial_health else None)} |",
+                f"| Current Ratio | {_format_markdown_multiple(financial_health.current_ratio if financial_health else None)} |",
+                f"| Cash Ratio | {_format_markdown_multiple(financial_health.cash_ratio if financial_health else None)} |",
+                f"| CFO / Liabilities | {_format_markdown_ratio(financial_health.operating_cash_flow_to_total_liabilities if financial_health else None)} |",
+                "",
+            ]
         )
 
         growth = result.growth.get(record.fiscal_year)
-        lines.append("  Growth:")
-        lines.append(
-            "    Revenue YoY:  "
-            f"{_format_ratio(growth.revenue_growth) if growth else 'None'}"
-        )
-        lines.append(
-            "    Net Inc YoY:  "
-            f"{_format_ratio(growth.net_income_growth) if growth else 'None'}"
-        )
-        lines.append(
-            "    FCF YoY:      "
-            f"{_format_ratio(growth.free_cash_flow_growth) if growth else 'None'}"
-        )
-        lines.append(
-            "    Revenue CAGR: "
-            f"{_format_ratio(growth.revenue_cagr) if growth else 'None'}"
-        )
-        lines.append(
-            "    Net Inc CAGR: "
-            f"{_format_ratio(growth.net_income_cagr) if growth else 'None'}"
-        )
-        lines.append(
-            "    FCF CAGR:     "
-            f"{_format_ratio(growth.free_cash_flow_cagr) if growth else 'None'}"
+        lines.extend(
+            [
+                "### Growth",
+                "",
+                "| Metric | Value |",
+                "|---|---:|",
+                f"| Revenue YoY | {_format_markdown_ratio(growth.revenue_growth if growth else None)} |",
+                f"| Net Income YoY | {_format_markdown_ratio(growth.net_income_growth if growth else None)} |",
+                f"| FCF YoY | {_format_markdown_ratio(growth.free_cash_flow_growth if growth else None)} |",
+                f"| Revenue CAGR | {_format_markdown_ratio(growth.revenue_cagr if growth else None)} |",
+                f"| Net Income CAGR | {_format_markdown_ratio(growth.net_income_cagr if growth else None)} |",
+                f"| FCF CAGR | {_format_markdown_ratio(growth.free_cash_flow_cagr if growth else None)} |",
+                "",
+            ]
         )
 
-    return "\n".join(lines)
-
-
-def build_markdown_report(result: AnalysisResult) -> str:
-    return ""
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def build_html_report(result: AnalysisResult) -> str:
     return ""
 
 
-def _format_number(value: float | None) -> str:
+def _format_markdown_number(value: float | None) -> str:
     if value is None:
-        return "None"
-    return f"{value:>15,.0f}"
+        return "N/A"
+    return f"{value:,.0f}"
 
 
-def _format_ratio(value: float | None) -> str:
+def _format_markdown_ratio(value: float | None) -> str:
     if value is None:
-        return "None"
-    return f"{value:>15.2%}"
+        return "N/A"
+    return f"{value:.2%}"
 
 
-def _format_multiple(value: float | None) -> str:
+def _format_markdown_multiple(value: float | None) -> str:
     if value is None:
-        return "None"
-    return f"{value:>15.2f}"
+        return "N/A"
+    return f"{value:.2f}"
