@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
-from stockagent.app import run_stock_analysis
+from stockagent.app import run_sec_fundamentals_analysis, run_stock_analysis
 from stockagent.config import AppConfig, RuntimeOptions
 from stockagent.data.errors import NoDataError
 from stockagent.financials.models import FinancialRecord
@@ -62,7 +64,7 @@ class EmptyProvider:
 
 
 class RunStockAnalysisTest(unittest.TestCase):
-    def test_run_stock_analysis_builds_all_default_sections(self) -> None:
+    def test_run_sec_fundamentals_analysis_builds_all_default_sections(self) -> None:
         provider = FakeProvider()
         calls: list[str] = []
         options = RuntimeOptions(
@@ -71,7 +73,7 @@ class RunStockAnalysisTest(unittest.TestCase):
         )
         config = AppConfig(edgar_identity="tester@example.com")
 
-        result = run_stock_analysis(
+        result = run_sec_fundamentals_analysis(
             options,
             config,
             provider=provider,
@@ -91,7 +93,7 @@ class RunStockAnalysisTest(unittest.TestCase):
         self.assertAlmostEqual(result.financial_health[2024].current_ratio, 2.0)
         self.assertAlmostEqual(result.growth[2024].revenue_growth, 0.2)
 
-    def test_run_stock_analysis_raises_no_data_when_provider_returns_empty_records(
+    def test_run_sec_fundamentals_analysis_raises_no_data_when_provider_returns_empty_records(
         self,
     ) -> None:
         options = RuntimeOptions(
@@ -101,7 +103,7 @@ class RunStockAnalysisTest(unittest.TestCase):
         config = AppConfig(edgar_identity="tester@example.com")
 
         with self.assertRaises(NoDataError) as context:
-            run_stock_analysis(
+            run_sec_fundamentals_analysis(
                 options,
                 config,
                 provider=EmptyProvider(),
@@ -110,6 +112,32 @@ class RunStockAnalysisTest(unittest.TestCase):
 
         self.assertEqual(context.exception.ticker, "FAKE")
         self.assertEqual(context.exception.provider, "EmptyProvider")
+
+    def test_run_stock_analysis_uses_agent_report_path(self) -> None:
+        options = RuntimeOptions(ticker="fake", years=2)
+        config = AppConfig(edgar_identity="tester@example.com")
+
+        with (
+            patch("stockagent.app.load_llm_config", return_value="llm-config"),
+            patch(
+                "stockagent.agents.orchestrator.run_stock_analysis_agent",
+                return_value="# Agent Report\n",
+            ) as run_agent,
+            patch(
+                "stockagent.report.writer.write_report",
+                return_value=Path("output/FAKE.md"),
+            ) as write_report,
+        ):
+            output_path = run_stock_analysis(options, config)
+
+        run_agent.assert_called_once_with("fake", 2, "llm-config")
+        write_report.assert_called_once_with(
+            "fake",
+            "# Agent Report\n",
+            report_format="md",
+            output_dir=options.output_dir,
+        )
+        self.assertEqual(output_path, Path("output/FAKE.md"))
 
 
 if __name__ == "__main__":
