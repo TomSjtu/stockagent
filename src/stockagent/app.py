@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol, TypeVar
 
-from stockagent.config import AppConfig, RuntimeOptions
+from stockagent.config import AppConfig, RuntimeOptions, load_llm_config
 from stockagent.data.errors import NoDataError
 from stockagent.data.providers.base import FinancialsProvider
 from stockagent.financials.models import (
@@ -45,7 +46,25 @@ class AnalysisResult:
     growth: dict[int, GrowthMetrics]
 
 
-def run_stock_analysis(
+def run_stock_analysis(options: RuntimeOptions, config: AppConfig) -> Path:
+    from stockagent.agents.orchestrator import run_stock_analysis_agent
+    from stockagent.report.writer import write_report
+
+    llm_config = load_llm_config()
+    report = run_stock_analysis_agent(
+        options.ticker,
+        options.years,
+        llm_config,
+    )
+    return write_report(
+        options.ticker,
+        report,
+        report_format=options.report_format,
+        output_dir=options.output_dir,
+    )
+
+
+def run_sec_fundamentals_analysis(
     options: RuntimeOptions,
     config: AppConfig,
     provider: FinancialsProvider | None = None,
