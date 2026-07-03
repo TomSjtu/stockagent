@@ -8,7 +8,7 @@ from stockagent.agents.fundamentals_agent import fundamentals_subagent
 from stockagent.agents.industry_agent import industry_subagent
 from stockagent.agents.risk_agent import risk_subagent
 from stockagent.agents.valuation_agent import valuation_subagent
-from stockagent.config import LLMConfig, apply_llm_environment
+from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig, apply_llm_environment
 from stockagent.errors import ConfigurationError
 from stockagent.tools.financials import get_full_analysis
 from stockagent.tools.search import web_search
@@ -60,7 +60,7 @@ def _build_model(llm_config: LLMConfig):
     provider, separator, model_name = llm_config.model.partition(":")
     if not separator or not provider.strip() or not model_name.strip():
         raise ConfigurationError(
-            "LLM_MODEL must include a provider prefix, for example: openai:gpt-5.5"
+            f"LLM_MODEL must include a provider prefix, for example: {DEFAULT_LLM_MODEL}"
         )
 
     builders = {

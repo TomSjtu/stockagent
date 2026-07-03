@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from stockagent.errors import ConfigurationError
 
 ReportFormat = Literal["md", "html", "pdf"]
+DEFAULT_LLM_MODEL = "openai:gpt-5.5"
 
 
 def default_output_dir() -> Path:
@@ -55,7 +56,7 @@ def load_llm_config() -> LLMConfig:
     return LLMConfig(
         api_key=api_key,
         base_url=os.getenv("LLM_BASE_URL", ""),
-        model=os.getenv("LLM_MODEL", "openai:gpt-5.4"),
+        model=os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL),
     )
 
 

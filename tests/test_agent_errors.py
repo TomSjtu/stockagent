@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from stockagent.agents.errors import LLMResponseError, LLMTimeoutError
 from stockagent.agents.orchestrator import _build_model, run_stock_analysis_agent
-from stockagent.config import LLMConfig
+from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
 from stockagent.errors import ConfigurationError
 
 
@@ -22,7 +22,7 @@ class AgentErrorsTest(unittest.TestCase):
         llm_config = LLMConfig(
             api_key="test-key",
             base_url="https://example.test/v1",
-            model="openai:gpt-5.5",
+            model=DEFAULT_LLM_MODEL,
         )
 
         with patch(
@@ -74,7 +74,7 @@ class AgentErrorsTest(unittest.TestCase):
         llm_config = LLMConfig(
             api_key="test-key",
             base_url="https://example.test/v1",
-            model="openai:gpt-5.5",
+            model=DEFAULT_LLM_MODEL,
         )
 
         with patch(
@@ -84,13 +84,13 @@ class AgentErrorsTest(unittest.TestCase):
             with self.assertRaises(LLMTimeoutError) as context:
                 run_stock_analysis_agent("NVDA", 3, llm_config)
 
-        self.assertEqual(context.exception.model, "openai:gpt-5.5")
+        self.assertEqual(context.exception.model, DEFAULT_LLM_MODEL)
 
     def test_run_stock_analysis_agent_wraps_non_timeout_errors(self) -> None:
         llm_config = LLMConfig(
             api_key="test-key",
             base_url="https://example.test/v1",
-            model="openai:gpt-5.5",
+            model=DEFAULT_LLM_MODEL,
         )
 
         with patch(
