@@ -52,6 +52,12 @@ def load_llm_config() -> LLMConfig:
             "LLM_API_KEY is required for agent reports. "
             "Set it in .env before running the default CLI analysis."
         )
+    tavily_api_key = os.getenv("TAVILY_API_KEY")
+    if not tavily_api_key:
+        raise ConfigurationError(
+            "TAVILY_API_KEY is required for agent reports. "
+            "Set it in .env before running the default CLI analysis."
+        )
 
     return LLMConfig(
         api_key=api_key,
