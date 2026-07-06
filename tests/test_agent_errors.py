@@ -4,7 +4,12 @@ import unittest
 from unittest.mock import patch
 
 from stockagent.agents.errors import LLMResponseError, LLMTimeoutError
-from stockagent.agents.orchestrator import _build_model, run_stock_analysis_agent
+from stockagent.agents.orchestrator import (
+    _build_model,
+    _is_native_openai_base_url,
+    build_openai_model,
+    run_stock_analysis_agent,
+)
 from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
 from stockagent.errors import ConfigurationError
 
@@ -18,6 +23,14 @@ class FakeAgent:
 
 
 class AgentErrorsTest(unittest.TestCase):
+    def test_native_openai_base_url_detection(self) -> None:
+        self.assertTrue(_is_native_openai_base_url(None))
+        self.assertTrue(_is_native_openai_base_url(""))
+        self.assertTrue(_is_native_openai_base_url("https://api.openai.com/v1"))
+        self.assertTrue(_is_native_openai_base_url("api.openai.com/v1"))
+        self.assertFalse(_is_native_openai_base_url("https://relay.example.com/v1"))
+        self.assertFalse(_is_native_openai_base_url("http://localhost:1234/v1"))
+
     def test_build_model_routes_openai_provider_to_openai_builder(self) -> None:
         llm_config = LLMConfig(
             api_key="test-key",
@@ -99,6 +112,43 @@ class AgentErrorsTest(unittest.TestCase):
         ):
             with self.assertRaises(LLMResponseError):
                 run_stock_analysis_agent("NVDA", 3, llm_config)
+
+    def test_build_openai_model_enables_responses_api_for_native_openai(self) -> None:
+        llm_config = LLMConfig(
+            api_key="test-key",
+            base_url="https://api.openai.com/v1",
+            model=DEFAULT_LLM_MODEL,
+        )
+
+        with patch("langchain_openai.ChatOpenAI", return_value="chat-openai") as chat_openai:
+            model = build_openai_model(llm_config, "gpt-5.5")
+
+        chat_openai.assert_called_once_with(
+            model="gpt-5.5",
+            api_key="test-key",
+            base_url="https://api.openai.com/v1",
+            timeout=60,
+            use_responses_api=True,
+        )
+        self.assertEqual(model, "chat-openai")
+
+    def test_build_openai_model_disables_responses_api_for_custom_base_url(self) -> None:
+        llm_config = LLMConfig(
+            api_key="test-key",
+            base_url="https://relay.example.com/v1",
+            model=DEFAULT_LLM_MODEL,
+        )
+
+        with patch("langchain_openai.ChatOpenAI", return_value="chat-openai") as chat_openai:
+            model = build_openai_model(llm_config, "gpt-5.5")
+
+        chat_openai.assert_called_once_with(
+            model="gpt-5.5",
+            api_key="test-key",
+            base_url="https://relay.example.com/v1",
+            timeout=60,
+        )
+        self.assertEqual(model, "chat-openai")
 
 
 if __name__ == "__main__":

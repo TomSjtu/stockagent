@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlparse
 
 from stockagent.agents.errors import LLMError, classify_llm_error
 from stockagent.agents.fundamentals_agent import fundamentals_subagent
@@ -76,17 +77,33 @@ def _build_model(llm_config: LLMConfig):
 def build_openai_model(llm_config: LLMConfig, model_name: str):
     from langchain_openai import ChatOpenAI
 
+    llm_kwargs = {
+        "model": model_name,
+        "api_key": llm_config.api_key,
+        "base_url": llm_config.base_url or None,
+        "timeout": 60,
+    }
+    if _is_native_openai_base_url(llm_config.base_url):
+        llm_kwargs["use_responses_api"] = True
+
     return ChatOpenAI(
-        model=model_name,
-        api_key=llm_config.api_key,
-        base_url=llm_config.base_url or None,
-        use_responses_api=True,
-        timeout=60,
+        **llm_kwargs,
     )
 
 
 def build_anthropic_model(llm_config: LLMConfig, model_name: str):
     pass
+
+
+def _is_native_openai_base_url(base_url: str | None) -> bool:
+    """Responses API is only safe on native OpenAI endpoints."""
+    if not base_url:
+        return True
+    normalized_base_url = base_url
+    if "://" not in normalized_base_url:
+        normalized_base_url = "https://" + normalized_base_url
+    host = urlparse(normalized_base_url).hostname or ""
+    return host == "api.openai.com" or host.endswith(".openai.com")
 
 
 def run_stock_analysis_agent(
