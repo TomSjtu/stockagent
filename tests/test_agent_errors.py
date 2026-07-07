@@ -18,7 +18,7 @@ class FakeAgent:
     def __init__(self, exc: Exception) -> None:
         self.exc = exc
 
-    def invoke(self, _payload: dict) -> dict:
+    def invoke(self, _payload: dict, config: dict | None = None) -> dict:
         raise self.exc
 
 
@@ -127,7 +127,7 @@ class AgentErrorsTest(unittest.TestCase):
             model="gpt-5.5",
             api_key="test-key",
             base_url="https://api.openai.com/v1",
-            timeout=60,
+            timeout=180,
             use_responses_api=True,
         )
         self.assertEqual(model, "chat-openai")
@@ -146,7 +146,7 @@ class AgentErrorsTest(unittest.TestCase):
             model="gpt-5.5",
             api_key="test-key",
             base_url="https://relay.example.com/v1",
-            timeout=60,
+            timeout=180,
         )
         self.assertEqual(model, "chat-openai")
 

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from stockagent.errors import ConfigurationError
 
 ReportFormat = Literal["md", "html", "pdf"]
+LogLevel = Literal["debug", "info", "warning", "error"]
 DEFAULT_LLM_MODEL = "openai:gpt-5.5"
 
 
@@ -35,6 +36,7 @@ class RuntimeOptions:
     years: int
     report_format: ReportFormat = "md"
     output_dir: Path = field(default_factory=default_output_dir)
+    log_level: LogLevel = "info"
 
 
 def load_app_config() -> AppConfig:

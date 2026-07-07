@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
 
+from langchain_core.callbacks import BaseCallbackHandler
+
 from stockagent.agents.errors import LLMError, classify_llm_error
 from stockagent.agents.fundamentals_agent import fundamentals_subagent
 from stockagent.agents.industry_agent import industry_subagent
@@ -11,6 +13,7 @@ from stockagent.agents.risk_agent import risk_subagent
 from stockagent.agents.valuation_agent import valuation_subagent
 from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig, apply_llm_environment
 from stockagent.errors import ConfigurationError
+from stockagent.observability import get_logger
 from stockagent.tools.financials import get_full_analysis
 from stockagent.tools.search import web_search
 
@@ -37,6 +40,177 @@ ORCHESTRATOR_PROMPT = """你是一名资深股票研究总监，负责协调团�
 重要：最后一条回复必须直接输出完整 Markdown 报告正文。
 
 """
+
+_TASK_TOOL_NAME = "task"
+_BUSINESS_TOOL_NAMES = frozenset({"get_full_analysis", "web_search"})
+
+
+class _AgentProgressCallbackHandler(BaseCallbackHandler):
+    def __init__(self) -> None:
+        self._logger = get_logger(__name__)
+        self._subagents_by_run_id: dict[str, str] = {}
+        self._task_run_ids: set[str] = set()
+
+    def on_chain_start(
+        self,
+        serialized: dict[str, Any],
+        inputs: dict[str, Any],
+        *,
+        run_id: Any,
+        parent_run_id: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self._inherit_subagent_context(str(run_id), _run_key(parent_run_id))
+
+    def on_chain_end(
+        self,
+        outputs: dict[str, Any],
+        *,
+        run_id: Any,
+        parent_run_id: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
+        run_key = str(run_id)
+        if run_key not in self._task_run_ids:
+            self._subagents_by_run_id.pop(run_key, None)
+
+    def on_chain_error(
+        self,
+        error: BaseException,
+        *,
+        run_id: Any,
+        parent_run_id: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
+        run_key = str(run_id)
+        if run_key not in self._task_run_ids:
+            self._subagents_by_run_id.pop(run_key, None)
+
+    def on_tool_start(
+        self,
+        serialized: dict[str, Any],
+        input_str: str,
+        *,
+        run_id: Any,
+        parent_run_id: Any | None = None,
+        inputs: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        tool_name = _tool_name(serialized)
+        run_key = str(run_id)
+        parent_key = _run_key(parent_run_id)
+
+        if tool_name == _TASK_TOOL_NAME:
+            subagent_name = _subagent_name(inputs)
+            if subagent_name is None:
+                return
+            self._subagents_by_run_id[run_key] = subagent_name
+            self._task_run_ids.add(run_key)
+            self._logger.info("启动 subagent: %s", subagent_name)
+            return
+
+        if tool_name not in _BUSINESS_TOOL_NAMES:
+            return
+
+        subagent_name = self._inherit_subagent_context(run_key, parent_key)
+        if subagent_name is None:
+            return
+
+        self._logger.info("subagent %s 调用工具: %s", subagent_name, tool_name)
+
+    def on_tool_end(
+        self,
+        output: Any,
+        *,
+        run_id: Any,
+        parent_run_id: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
+        run_key = str(run_id)
+        if run_key in self._task_run_ids:
+            self._task_run_ids.remove(run_key)
+            subagent_name = self._subagents_by_run_id.pop(run_key, None)
+            if subagent_name is None:
+                return
+            self._logger.info("subagent %s 完成", subagent_name)
+            return
+
+        subagent_name = self._subagents_by_run_id.pop(run_key, None)
+        if subagent_name is None:
+            return
+
+        self._logger.info("subagent %s 工具返回: success", subagent_name)
+
+    def on_tool_error(
+        self,
+        error: BaseException,
+        *,
+        run_id: Any,
+        parent_run_id: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
+        run_key = str(run_id)
+        if run_key in self._task_run_ids:
+            self._task_run_ids.remove(run_key)
+            subagent_name = self._subagents_by_run_id.pop(run_key, None)
+            if subagent_name is None:
+                return
+            self._logger.error("subagent %s 失败: %s", subagent_name, error)
+            return
+
+        subagent_name = self._subagents_by_run_id.pop(run_key, None)
+        if subagent_name is None:
+            return
+
+        self._logger.error("subagent %s 工具返回: failed", subagent_name)
+
+    def _inherit_subagent_context(
+        self,
+        run_key: str,
+        parent_key: str | None,
+    ) -> str | None:
+        subagent_name = self._subagents_by_run_id.get(run_key)
+        if subagent_name is not None:
+            return subagent_name
+
+        if parent_key is None:
+            return None
+
+        subagent_name = self._subagents_by_run_id.get(parent_key)
+        if subagent_name is None:
+            return None
+
+        self._subagents_by_run_id[run_key] = subagent_name
+        return subagent_name
+
+
+def _tool_name(serialized: Mapping[str, Any]) -> str:
+    name = serialized.get("name")
+    if isinstance(name, str):
+        return name
+
+    tool_id = serialized.get("id")
+    if isinstance(tool_id, list) and tool_id:
+        last_item = tool_id[-1]
+        if isinstance(last_item, str):
+            return last_item
+
+    return ""
+
+
+def _subagent_name(inputs: Mapping[str, Any] | None) -> str | None:
+    if inputs is None:
+        return None
+    value = inputs.get("subagent_type")
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _run_key(run_id: Any | None) -> str | None:
+    if run_id is None:
+        return None
+    return str(run_id)
 
 
 def create_stock_analysis_agent(llm_config: LLMConfig):
@@ -81,7 +255,7 @@ def build_openai_model(llm_config: LLMConfig, model_name: str):
         "model": model_name,
         "api_key": llm_config.api_key,
         "base_url": llm_config.base_url or None,
-        "timeout": 60,
+        "timeout": 180,
     }
     if _is_native_openai_base_url(llm_config.base_url):
         llm_kwargs["use_responses_api"] = True
@@ -112,6 +286,7 @@ def run_stock_analysis_agent(
     llm_config: LLMConfig,
 ) -> str:
     agent = create_stock_analysis_agent(llm_config)
+    progress_handler = _AgentProgressCallbackHandler()
     try:
         result = agent.invoke(
             {
@@ -124,12 +299,14 @@ def run_stock_analysis_agent(
                         ),
                     }
                 ]
-            }
+            },
+            config={"callbacks": [progress_handler]},
         )
     except LLMError:
         raise
     except Exception as exc:
         raise classify_llm_error(exc, llm_config.model) from exc
+    get_logger(__name__).info("主 agent 开始汇总最终报告")
     return extract_final_report(result)
 
 
