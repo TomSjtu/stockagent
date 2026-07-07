@@ -1,26 +1,110 @@
 # stockagent
 
-`stockagent` is a small Python CLI tool for analyzing US stock basics.
+`stockagent` 是一个面向美股的命令行股票分析工具。当前默认流程会用 DeepAgents 编排多个分析子 Agent，结合 SEC EDGAR 财务数据、Tavily 搜索结果和 LLM，生成中文 Markdown 股票研究报告。
 
-## Quick Start
+> 生成内容仅用于研究和学习，不构成投资建议。
 
-### Requirements
+## 功能概览
+
+- 拉取 SEC EDGAR 年度财务数据，并标准化为项目内部的财务记录。
+- 计算盈利能力、现金流、财务健康度、成长性等基本面指标。
+- 通过 DeepAgents 编排行业、基本面、估值、风险四类子 Agent。
+- 使用 Tavily 补充行业趋势、公司动态和市场信息。
+- 输出中文 Markdown 报告，并在 CLI 运行过程中打印关键阶段日志。
+
+## 环境要求
 
 - Python 3.11+
-- `uv` recommended
+- 推荐使用 `uv`
 
-### Install
+## 安装
 
 ```bash
 uv sync
 ```
 
-or
+也可以使用可编辑安装：
 
 ```bash
 pip install -e .
 ```
 
-### Run
+## 配置
 
-`uv run stock AAPL`
+复制环境变量示例文件：
+
+```bash
+cp .env.example .env
+```
+
+填写 `.env`：
+
+```bash
+# LLM configuration
+LLM_API_KEY=sk-...
+LLM_BASE_URL=
+LLM_MODEL=openai:gpt-5.5
+
+# Data providers
+STOCKAGENT_EDGAR_IDENTITY=Your Name your.email@example.com
+TAVILY_API_KEY=tvly-...
+```
+
+变量说明：
+
+- `LLM_API_KEY`：必填，默认 Agent 报告流程。
+- `LLM_BASE_URL`：可选，用于 OpenAI 兼容接口。
+- `LLM_MODEL`：必填，模型名必须包含 provider 前缀，默认是 `openai:gpt-5.5`。
+- `TAVILY_API_KEY`：必填，默认 Agent 报告流程，用于网页搜索工具。
+- `STOCKAGENT_EDGAR_IDENTITY`：EDGAR 请求身份标识；代码有默认值，但实际使用建议显式配置。
+
+当前已实现的模型构建路径是 OpenAI 兼容模型。`anthropic:` provider 的环境变量映射已预留，但模型构建函数尚未完成。
+
+## 运行
+
+```bash
+uv run stock AAPL
+```
+
+常用参数：
+
+```bash
+uv run stock AAPL --years 5 --output-dir output --log-level info
+```
+
+参数说明：
+
+- `ticker`：必填，美股 ticker，例如 `AAPL`。
+- `--years`：分析最近几个财年，默认 `3`。
+- `--output-dir`：报告输出目录，默认是当前目录下的 `output/`。
+- `--log-level`：日志级别，可选 `debug`、`info`、`warning`、`error`，默认 `info`。
+- `--report-format`：目前实际可用格式是 `md`。`html` 和 `pdf` 参数已保留，但写入功能尚未实现。
+
+报告文件名格式：
+
+```text
+output/AAPL-YYYY-MM-DD.md
+```
+
+## 项目结构
+
+```text
+src/stockagent/
+  cli.py                 # CLI 参数解析和入口
+  app.py                 # 应用编排入口
+  config.py              # .env 和运行配置
+  api.py                 # DeepAgents 工具和确定性分析的统一接口
+  agents/                # DeepAgents 主编排和分析子 Agent
+  tools/                 # Agent 可调用工具
+  data/providers/        # EDGAR 数据提供方
+  fundamentals/          # 基本面指标计算
+  financials/models.py   # 财务数据模型
+  report/                # 报告生成和写入
+  observability.py       # 日志和流程观测
+```
+
+## 当前限制
+
+- 报告写入当前只实现 Markdown。
+- 估值分析尚未实现。
+- 只支持了openai格式的LLM。
