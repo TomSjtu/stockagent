@@ -25,6 +25,7 @@ from stockagent.fundamentals.inputs import (
     build_profitability_inputs,
 )
 from stockagent.fundamentals.profitability import compute_profitability_series
+from stockagent.observability import get_logger
 
 IdentitySetter = Callable[[str], None]
 
@@ -50,12 +51,17 @@ def run_stock_analysis(options: RuntimeOptions, config: AppConfig) -> Path:
     from stockagent.agents.orchestrator import run_stock_analysis_agent
     from stockagent.report.writer import write_report
 
+    logger = get_logger(__name__)
     llm_config = load_llm_config()
+    logger.info("加载 LLM 配置完成")
+    logger.info("启动主分析 agent")
     report = run_stock_analysis_agent(
         options.ticker,
         options.years,
         llm_config,
     )
+    logger.info("主分析 agent 完成")
+    logger.info("开始写入报告")
     return write_report(
         options.ticker,
         report,

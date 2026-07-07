@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+import logging
+import sys
+
+from stockagent.config import LogLevel
+
+_LOG_LEVELS: dict[LogLevel, int] = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+}
+
+
+def setup_logging(level: LogLevel = "info") -> None:
+    logging.basicConfig(
+        level=_LOG_LEVELS[level],
+        format="[%(levelname)s] %(asctime)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        stream=sys.stderr,
+        force=True,
+    )
+
+
+def get_logger(name: str) -> logging.Logger:
+    return logging.getLogger(name)
+
+
+def log_stage_started(logger: logging.Logger, stage: str) -> None:
+    logger.info("%s", stage)
+
+
+def log_stage_completed(logger: logging.Logger, stage: str) -> None:
+    logger.info("%s", stage)
+
+
+def log_stage_failed(logger: logging.Logger, stage: str, error: Exception) -> None:
+    logger.error("%s: %s", stage, error)

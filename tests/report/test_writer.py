@@ -39,6 +39,27 @@ class ReportWriterTest(unittest.TestCase):
             self.assertEqual(output_path.name, "AAPL-2026-06-21.md")
             self.assertTrue(output_path.exists())
 
+    def test_write_markdown_report_logs_write_stages(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "output"
+
+            with self.assertLogs("stockagent.report.writer", level="INFO") as logs:
+                output_path = write_markdown_report(
+                    "aapl",
+                    "# Report\n",
+                    output_dir=output_dir,
+                    report_date=date(2026, 6, 21),
+                )
+
+            self.assertIn(
+                "INFO:stockagent.report.writer:开始写入 Markdown 报告",
+                logs.output,
+            )
+            self.assertIn(
+                f"INFO:stockagent.report.writer:报告写入完成: {output_path}",
+                logs.output,
+            )
+
     def test_write_report_raises_for_unimplemented_html_writer(self) -> None:
         with self.assertRaises(NotImplementedError):
             write_report(
