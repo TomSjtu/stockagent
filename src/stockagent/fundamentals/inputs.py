@@ -100,6 +100,36 @@ class GrowthInput:
         )
 
 
+@dataclass(slots=True, frozen=True)
+class ValuationInput:
+    """Minimum fields needed to compute valuation metrics."""
+
+    fiscal_year: int
+    price: float | None
+    market_cap: float | None
+    revenue: float | None
+    net_income: float | None
+    eps_diluted: float | None
+    shareholders_equity: float | None
+
+    @classmethod
+    def from_record(
+        cls,
+        record: FinancialRecord,
+        price: float | None,
+        market_cap: float | None,
+    ) -> "ValuationInput":
+        return cls(
+            fiscal_year=record.fiscal_year,
+            price=price,
+            market_cap=market_cap,
+            revenue=record.revenue,
+            net_income=record.net_income,
+            eps_diluted=record.eps_diluted,
+            shareholders_equity=record.shareholders_equity,
+        )
+
+
 def build_profitability_inputs(
     records: list[FinancialRecord],
 ) -> list[ProfitabilityInput]:
@@ -122,3 +152,11 @@ def build_growth_inputs(
     records: list[FinancialRecord],
 ) -> list[GrowthInput]:
     return [GrowthInput.from_record(record) for record in records]
+
+
+def build_valuation_input(
+    record: FinancialRecord,
+    price: float | None,
+    market_cap: float | None,
+) -> ValuationInput:
+    return ValuationInput.from_record(record, price, market_cap)

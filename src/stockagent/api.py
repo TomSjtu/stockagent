@@ -13,6 +13,7 @@ from stockagent.financials.models import (
     FinancialRecord,
     GrowthMetrics,
     ProfitabilityMetrics,
+    ValuationMetrics,
 )
 from stockagent.fundamentals.cash_flow import compute_cash_flow_series
 from stockagent.fundamentals.financial_health import compute_financial_health_series
@@ -22,8 +23,12 @@ from stockagent.fundamentals.inputs import (
     build_financial_health_inputs,
     build_growth_inputs,
     build_profitability_inputs,
+    build_valuation_input,
 )
 from stockagent.fundamentals.profitability import compute_profitability_series
+from stockagent.fundamentals.valuation import (
+    compute_valuation as compute_valuation_from_input,
+)
 
 MetricT = TypeVar("MetricT", bound="HasFiscalYear")
 
@@ -89,6 +94,17 @@ def compute_financial_health(
     return _index_by_year(
         compute_financial_health_series(build_financial_health_inputs(list(records)))
     )
+
+
+def compute_valuation(
+    records: tuple[FinancialRecord, ...],
+    price: float | None = None,
+    market_cap: float | None = None,
+) -> ValuationMetrics:
+    """Compute trailing valuation metrics from the latest fiscal year."""
+    latest = max(records, key=lambda record: record.fiscal_year)
+    valuation_input = build_valuation_input(latest, price, market_cap)
+    return compute_valuation_from_input(valuation_input)
 
 
 def analyze(ticker: str, years: int = 3) -> AnalysisResult:

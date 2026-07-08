@@ -35,14 +35,16 @@ ORCHESTRATOR_PROMPT = """你是一名资深股票研究总监，负责协调团�
 7. 使用 write_file 将最终报告写入 final_report.md
 
 最终报告必须包含：摘要、行业分析、基本面分析、估值分析、风险评估、投资建议。
-必须明确说明这不是投资建议，且估值部分若缺少实时价格，应说明限制。
+必须明确说明这不是投资建议，且估值部分若缺少可靠股价/市值来源，应说明限制。
 
 重要：最后一条回复必须直接输出完整 Markdown 报告正文。
 
 """
 
 _TASK_TOOL_NAME = "task"
-_BUSINESS_TOOL_NAMES = frozenset({"get_full_analysis", "web_search"})
+_BUSINESS_TOOL_NAMES = frozenset(
+    {"get_full_analysis", "web_search", "compute_valuation_metrics"}
+)
 
 
 class _AgentProgressCallbackHandler(BaseCallbackHandler):

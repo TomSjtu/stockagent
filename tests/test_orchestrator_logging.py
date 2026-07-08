@@ -54,6 +54,38 @@ class OrchestratorLoggingTest(unittest.TestCase):
             ],
         )
 
+    def test_callback_logs_valuation_tool_progress(self) -> None:
+        handler = _AgentProgressCallbackHandler()
+        task_run_id = uuid4()
+        tool_run_id = uuid4()
+
+        with self.assertLogs("stockagent.agents.orchestrator", level="INFO") as logs:
+            handler.on_tool_start(
+                {"name": "task"},
+                "",
+                run_id=task_run_id,
+                inputs={"subagent_type": "valuation_analyst"},
+            )
+            handler.on_tool_start(
+                {"name": "compute_valuation_metrics"},
+                "",
+                run_id=tool_run_id,
+                parent_run_id=task_run_id,
+            )
+            handler.on_tool_end("{}", run_id=tool_run_id, parent_run_id=task_run_id)
+            handler.on_tool_end("done", run_id=task_run_id)
+
+        self.assertEqual(
+            logs.output,
+            [
+                "INFO:stockagent.agents.orchestrator:启动 subagent: valuation_analyst",
+                "INFO:stockagent.agents.orchestrator:subagent valuation_analyst "
+                "调用工具: compute_valuation_metrics",
+                "INFO:stockagent.agents.orchestrator:subagent valuation_analyst 工具返回: success",
+                "INFO:stockagent.agents.orchestrator:subagent valuation_analyst 完成",
+            ],
+        )
+
     def test_callback_logs_subagent_and_business_tool_failures(self) -> None:
         handler = _AgentProgressCallbackHandler()
         task_run_id = uuid4()

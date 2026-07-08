@@ -58,6 +58,30 @@ def compute_financial_health_metrics(ticker: str, years: int = 3) -> str:
     )
 
 
+def compute_valuation_metrics(
+    ticker: str,
+    price: float | None = None,
+    market_cap: float | None = None,
+    years: int = 3,
+) -> str:
+    """Compute trailing PE/PB/PS from market inputs and latest financials."""
+    records = api.fetch_financials(ticker, years)
+    metrics = api.compute_valuation(records, price, market_cap)
+    return _to_json(
+        {
+            "ticker": ticker.upper(),
+            "years": years,
+            "fiscal_year": metrics.fiscal_year,
+            "valuation": metrics,
+            "market_inputs": {
+                "price": price,
+                "market_cap": market_cap,
+            },
+            "unavailable": _valuation_unavailable_reasons(metrics),
+        }
+    )
+
+
 def get_full_analysis(ticker: str, years: int = 3) -> str:
     """Fetch records and compute all deterministic financial metrics."""
     result = api.analyze(ticker, years)
@@ -86,6 +110,19 @@ def _to_json(value: Any) -> str:
         indent=2,
         sort_keys=True,
     )
+
+
+def _valuation_unavailable_reasons(metrics: Any) -> dict[str, str]:
+    reasons = {}
+    if metrics.pe_ratio is None:
+        reasons["pe_ratio"] = (
+            "missing positive price/eps_diluted or positive market_cap/net_income"
+        )
+    if metrics.pb_ratio is None:
+        reasons["pb_ratio"] = "missing positive market_cap/shareholders_equity"
+    if metrics.ps_ratio is None:
+        reasons["ps_ratio"] = "missing positive market_cap/revenue"
+    return reasons
 
 
 def _serialize(value: Any) -> Any:

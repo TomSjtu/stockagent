@@ -84,3 +84,15 @@ class GrowthMetrics:
     revenue_cagr: float | None = None
     net_income_cagr: float | None = None
     free_cash_flow_cagr: float | None = None
+
+
+@dataclass(slots=True)
+class ValuationMetrics:
+    """Computed valuation ratios for one fiscal year."""
+
+    fiscal_year: int
+    stock_price: float | None = None
+    market_cap: float | None = None
+    pe_ratio: float | None = None
+    pb_ratio: float | None = None
+    ps_ratio: float | None = None
