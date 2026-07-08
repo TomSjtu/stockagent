@@ -23,7 +23,7 @@
 
 `stockagent` 当前是一套基于 DeepAgents 编排、以 EDGAR 财务数据为底座、以 Tavily 作为行业搜索补充的多 Agent 股票分析系统。
 
-截至 2026-07-08，默认 Agent 报告路径、LLM/Tavily 前置配置校验、流程日志、subagent 进度回调和 Markdown 报告写入已经落地。下一步重点不再是重搭架构，而是收口伪支持能力、补齐估值确定性计算、扩大 Agent 路径测试，并继续提高 CLI 运行过程的可观察性。
+截至 2026-07-08，默认 Agent 报告路径、LLM/Tavily 前置配置校验、流程日志、subagent 进度回调、估值确定性计算和 Markdown 报告写入已经落地。下一步重点不再是重搭架构，而是收口伪支持能力、正式暴露 deterministic / agent 运行模式、扩大 Agent 路径测试，并继续提高 CLI 运行过程的可观察性。
 
 当前默认路径是：
 
@@ -159,12 +159,13 @@ src/stockagent/
     └── writer.py
 ```
 
-测试文件当前共 16 个测试模块：
+测试文件当前共 18 个测试模块：
 
 - `tests/test_cli.py`
 - `tests/test_app.py`
 - `tests/test_config.py`
 - `tests/test_agent_errors.py`
+- `tests/test_api.py`
 - `tests/test_financial_tools.py`
 - `tests/test_observability.py`
 - `tests/test_orchestrator_logging.py`
@@ -174,13 +175,14 @@ src/stockagent/
 - `tests/fundamentals/test_financial_health.py`
 - `tests/fundamentals/test_growth.py`
 - `tests/fundamentals/test_profitability.py`
+- `tests/fundamentals/test_valuation.py`
 - `tests/report/test_builder.py`
 - `tests/report/test_generator.py`
 - `tests/report/test_writer.py`
 
 补充说明：
 
-- `fundamentals/valuation.py` 文件存在，但当前仍为空文件。
+- `fundamentals/valuation.py` 当前已实现基于最新财年和市场输入的 trailing PE / PB / PS 计算。
 
 ## 5. 核心运行路径
 
@@ -274,18 +276,19 @@ valuation agent 调用 fetch_company_financials("AAPL", 3)
 | Orchestrator | `orchestrator.py` | `get_full_analysis`, `web_search` | 四份分析文件 | `final_report.md` |
 | 行业分析 | `industry_agent.py` | `web_search` | 无 | `industry_analysis.md` |
 | 基本面 | `fundamentals_agent.py` | `fetch_company_financials`, `compute_profitability_metrics`, `compute_growth_metrics`, `compute_cash_flow_metrics`, `compute_financial_health_metrics` | 无 | `fundamentals_analysis.md` |
-| 估值分析 | `valuation_agent.py` | `fetch_company_financials` | `industry_analysis.md`, `fundamentals_analysis.md` | `valuation_analysis.md` |
+| 估值分析 | `valuation_agent.py` | `fetch_company_financials`, `web_search`, `compute_valuation_metrics` | `industry_analysis.md`, `fundamentals_analysis.md` | `valuation_analysis.md` |
 | 风险评估 | `risk_agent.py` | `fetch_company_financials`, `compute_financial_health_metrics` | `industry_analysis.md`, `fundamentals_analysis.md`, `valuation_analysis.md` | `risk_analysis.md` |
 
 ### 6.3 Tool 设计边界
 
-`tools/financials.py` 当前暴露 6 个财务相关工具：
+`tools/financials.py` 当前暴露 7 个财务相关工具：
 
 - `fetch_company_financials`
 - `compute_profitability_metrics`
 - `compute_growth_metrics`
 - `compute_cash_flow_metrics`
 - `compute_financial_health_metrics`
+- `compute_valuation_metrics`
 - `get_full_analysis`
 
 `tools/search.py` 当前暴露：
@@ -364,15 +367,15 @@ OpenAI 分支当前还有一条额外逻辑：
 | 模块 | 状态 | 说明 |
 |---|---|---|
 | `api.py` | 已完成 | 已有 fetch / compute / analyze 主链路和缓存 |
-| `tools/financials.py` | 已完成 | 已有 6 个财务工具 |
+| `tools/financials.py` | 已完成 | 已有 7 个财务工具，包含估值计算入口 |
 | `tools/search.py` | 已完成 | 已有 Tavily 搜索工具 |
 | `config.py` | 已完成 | 已支持 `.env` 加载和 `LLM_MODEL` 配置 |
 | `agents/*.py` | 已完成 | 已有 orchestrator 和 4 个 subagent |
 | `cli.py` | 已完成 | 默认走 Agent 路径 |
 | `observability.py` | 已完成 | 已有 CLI 日志初始化和阶段日志辅助函数 |
 | `report/writer.py` | 部分完成 | Markdown 已完成，HTML/PDF 未完成 |
-| `fundamentals/valuation.py` | 未完成 | 文件存在但为空 |
-| `docs/valuation.md` | 草案 | 已有估值方案 A，但尚未实现到代码 |
+| `fundamentals/valuation.py` | 已完成 | 已实现 trailing PE / PB / PS 的确定性计算 |
+| `docs/valuation.md` | 草案 | 仍可作为后续扩展 EV/收益率等估值指标的参考 |
 
 ## 9. 当前已知问题
 
@@ -383,13 +386,14 @@ OpenAI 分支当前还有一条额外逻辑：
 | Anthropic builder 未实现 | `agents/orchestrator.py` | `anthropic:*` provider 入口存在，但 `build_anthropic_model()` 为空 |
 | 缺少 `langchain-anthropic` 依赖 | `pyproject.toml` | 即使补代码，当前依赖也不完整 |
 | CLI 暴露了未实现的报告格式 | `cli.py` / `report/writer.py` | `html`、`pdf` 可被选择，但运行时会抛 `NotImplementedError` |
-| 估值路径缺确定性计算 | `fundamentals/valuation.py` / `valuation_agent.py` | 估值仍主要依赖 LLM 文本推理，缺少 PE/PB/PS 等可验证指标 |
+| 文档与实现存在漂移 | `README.md` / `docs/plan.md` | 旧文档仍把估值描述为未实现，且未完整反映当前工具集 |
+| CLI 未暴露 deterministic 模式 | `cli.py` / `app.py` | 代码中保留 fallback，但命令行当前默认只走 Agent 路径 |
 
 ### 9.2 中优先级
 
 | 问题 | 位置 | 说明 |
 |---|---|---|
-| 估值缺实时市场数据 | `valuation_agent.py` | 无法直接获取股价、市值、PE/PB/PS 实时口径 |
+| 估值缺结构化市场数据源 | `valuation_agent.py` / `tools/search.py` | 当前股价、市值仍依赖 Tavily 搜索结果提取，可靠性取决于来源质量 |
 | Agent 路径集成测试仍不足 | `tests/` | 已有日志和错误分类测试，但还缺 mock LLM + mock EDGAR + 报告写入的完整流程测试 |
 | subagent 工具日志覆盖不完整 | `agents/orchestrator.py` | 当前只覆盖 `get_full_analysis` 和 `web_search`，未覆盖全部 financial tools |
 | `app.py` 与 `api.py` 存在部分重复确定性逻辑 | `app.py` / `api.py` | 后续可适度收敛，但不能破坏 fallback |
@@ -405,7 +409,7 @@ OpenAI 分支当前还有一条额外逻辑：
 
 ### 第一阶段：收口运行时能力面
 
-目标：先消除“用户能选但实际不可用”的路径，让默认运行体验稳定。
+目标：先消除“用户能选但实际不可用”的路径，同时把代码里已存在的 deterministic fallback 正式纳入运行时合同。
 
 1. 对 `anthropic:` 做明确选择：
    - 要么补齐 `build_anthropic_model()` 和依赖。
@@ -413,11 +417,13 @@ OpenAI 分支当前还有一条额外逻辑：
 2. 对 `--report-format html/pdf` 做明确选择：
    - 若短期不做，先从 CLI choices 中移除，只保留 `md`。
    - 若要保留参数，则补齐 writer、测试和依赖。
-3. 保持 `DEFAULT_LLM_MODEL` 作为模型默认值唯一来源，后续文档、`.env.example`、测试都不要重复硬编码不同默认值。
+3. 为 CLI 增加显式模式切换，例如 `--mode deterministic|agent`，把 `run_sec_fundamentals_analysis()` 变成正式用户入口，而不是只保留为代码内 fallback。
+4. 保持 `DEFAULT_LLM_MODEL` 作为模型默认值唯一来源，后续文档、`.env.example`、测试都不要重复硬编码不同默认值。
 
 验收标准：
 
 - 不存在可通过 CLI 选择但运行到中途才发现未实现的功能。
+- CLI 对 deterministic / agent 两条路径的入口行为清晰可预期。
 - `_build_model()`、`write_report()`、`load_llm_config()` 的失败路径都有明确测试。
 
 ### 第二阶段：补齐日志与 Agent 稳定性
@@ -430,7 +436,7 @@ OpenAI 分支当前还有一条额外逻辑：
    - `compute_growth_metrics`
    - `compute_cash_flow_metrics`
    - `compute_financial_health_metrics`
-   - 后续新增的 `compute_valuation_metrics`
+   - `compute_valuation_metrics`
 2. 为 `extract_final_report()` 增加更多返回结构测试。
 3. 增加至少一条“mock LLM + mock EDGAR + mock Tavily + 生成报告文件”的集成测试。
 4. 后续如需要更细粒度进度，再评估从 `invoke()` 升级为 `stream()` / `astream_events()`。
@@ -442,42 +448,36 @@ OpenAI 分支当前还有一条额外逻辑：
 
 ### 第三阶段：增强估值能力
 
-目标：把估值从“LLM 文字判断”推进到“市场数据 + 确定性倍数计算 + LLM 解读”。
+目标：把估值从“已有确定性倍数计算”推进到“更可靠市场数据 + 更多可验证指标 + LLM 解读”。
 
-现有草案：`docs/valuation.md` 已提出方案 A：通过 Tavily 搜索股价/市值，再用最新财年数据确定性计算 trailing 估值倍数。
+现有草案：`docs/valuation.md` 已提出方案 A。当前代码已经实现通过市场输入计算 trailing PE / PB / PS，后续重点是改善市场输入来源和扩展估值指标。
 
 建议按草案分小步落地：
 
-1. 在 `financials/models.py` 增加 `ValuationMetrics`。
-2. 在 `fundamentals/inputs.py` 增加 `ValuationInput` 和构造函数。
-3. 实现 `fundamentals/valuation.py`：
-   - PE
-   - PB
-   - PS
+1. 为估值链路引入更稳定的市场数据输入接口，至少显式收敛：
+   - `price`
+   - `market_cap`
+   - `as_of`
+   - `source`
+2. 将当前 Tavily 搜索结果提取逻辑约束成更稳定的输入 contract，避免 prompt 自由发挥。
+3. 在现有 `PE / PB / PS` 基础上，按数据条件逐步扩展：
    - EV
    - EV/EBITDA
    - earnings yield
    - FCF yield
-   - dividend yield
-4. 在 `api.py` 增加 `compute_valuation()`。
-5. 在 `tools/financials.py` 增加 `compute_valuation_metrics()`。
-6. 更新 `valuation_agent.py`：
-   - 加入 `web_search`
-   - 加入 `compute_valuation_metrics`
-   - 删除“当前工具没有实时股价”的限制描述
-7. 增加 valuation 单元测试和 tool JSON 输出测试。
+4. 继续补 valuation 单元测试和 tool JSON 输出测试，覆盖缺字段、负值、来源不可靠等边界。
+5. 更新估值 agent prompt，使其更明确区分“确定性计算结果”和“搜索来源解释”。
 
-首批字段建议只做：
+下一阶段最小可交付建议只做：
 
-- 最新价格
-- 市值
-- PE / PB / PS
-- 数据时间戳
+- 更稳定的 `price / market_cap / as_of / source`
+- 当前已实现 `PE / PB / PS` 的边界补测
+- 估值报告中的来源说明和置信度约束
 
 验收标准：
 
-- 不访问 LLM 也能对给定 price / market_cap 和财报记录计算估值指标。
-- Agent 可以把搜索到的市场数据传入确定性 tool，而不是让 LLM 自己算倍数。
+- 不访问 LLM 也能对给定 `price / market_cap` 和财报记录计算估值指标。
+- Agent 使用的市场输入具有更明确的来源和时间戳，而不是只靠自由文本搜索结果。
 
 ### 第四阶段：继续收敛边界和文档
 
