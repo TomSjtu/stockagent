@@ -47,7 +47,6 @@ LLM_BASE_URL=
 LLM_MODEL=openai:gpt-5.5
 
 # Data providers
-STOCKAGENT_EDGAR_IDENTITY=Your Name your.email@example.com
 TAVILY_API_KEY=tvly-...
 ```
 
@@ -57,7 +56,8 @@ TAVILY_API_KEY=tvly-...
 - `LLM_BASE_URL`：可选，用于 OpenAI 兼容接口。
 - `LLM_MODEL`：必填，模型名必须包含 provider 前缀，默认是 `openai:gpt-5.5`。
 - `TAVILY_API_KEY`：必填，默认 Agent 报告流程，用于网页搜索工具。
-- `STOCKAGENT_EDGAR_IDENTITY`：EDGAR 请求身份标识；代码有默认值，但实际使用建议显式配置。
+
+EDGAR 请求身份标识固定为 `stockagent stockagent@example.com`。
 
 当前已实现的模型构建路径是 OpenAI 兼容模型。`anthropic:` provider 的环境变量映射已预留，但模型构建函数尚未完成。
 
@@ -89,14 +89,12 @@ output/AAPL-YYYY-MM-DD.md
 补充说明：
 
 - 当前 CLI 默认只暴露 Agent 报告路径。
-- 代码中仍保留 `app.run_sec_fundamentals_analysis()` 这条确定性 fallback 路径，主要用于测试、基线对照和后续模式切换。
 - 报告文件会写入 `output/`，写入路径通过日志输出。
 
 ## 当前执行链路
 
 ```text
 stockagent.cli:main
-  -> load_app_config()
   -> app.run_stock_analysis()
   -> load_llm_config()
   -> agents.orchestrator.run_stock_analysis_agent()
@@ -131,4 +129,3 @@ src/stockagent/
 
 - 当前仅完成 `openai:` provider 的模型构建；`anthropic:` 入口预留但未实现。
 - 估值链路已经有 PE / PB / PS 的确定性计算，但市场输入仍来自非结构化搜索结果，可靠性依赖来源质量。
-- CLI 尚未正式暴露 deterministic / agent 模式切换，确定性 fallback 目前主要通过代码入口使用。

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 
 from typing import Protocol, TypeVar
 
-from stockagent.app import AnalysisResult
-from stockagent.config import RuntimeOptions, load_app_config
+from stockagent.config import DEFAULT_EDGAR_IDENTITY
 from stockagent.data.errors import NoDataError
 from stockagent.financials.models import (
     CashFlowMetrics,
@@ -37,6 +37,16 @@ class HasFiscalYear(Protocol):
     fiscal_year: int
 
 
+@dataclass(slots=True)
+class AnalysisResult:
+    ticker: str
+    records: list[FinancialRecord]
+    profitability: dict[int, ProfitabilityMetrics]
+    cash_flow: dict[int, CashFlowMetrics]
+    financial_health: dict[int, FinancialHealthMetrics]
+    growth: dict[int, GrowthMetrics]
+
+
 def fetch_financials(ticker: str, years: int = 3) -> tuple[FinancialRecord, ...]:
     """Fetch normalized annual financial records from EDGAR."""
     return _fetch_financials_cached(ticker.upper(), years)
@@ -50,8 +60,7 @@ def _fetch_financials_cached(
     from edgar import set_identity
     from stockagent.data.providers.edgar import EdgarFinancialsProvider
 
-    config = load_app_config()
-    set_identity(config.edgar_identity)
+    set_identity(DEFAULT_EDGAR_IDENTITY)
 
     provider = EdgarFinancialsProvider()
     records = provider.fetch_annual_records(normalized_ticker, years=years)
@@ -118,11 +127,6 @@ def analyze(ticker: str, years: int = 3) -> AnalysisResult:
         financial_health=compute_financial_health(records),
         growth=compute_growth(records),
     )
-
-
-def analyze_options(options: RuntimeOptions) -> AnalysisResult:
-    """Run the public API from parsed runtime options."""
-    return analyze(options.ticker, options.years)
 
 
 def _index_by_year(metrics: list[MetricT]) -> dict[int, MetricT]:

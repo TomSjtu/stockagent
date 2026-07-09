@@ -11,15 +11,11 @@ from stockagent.errors import ConfigurationError
 
 LogLevel = Literal["debug", "info", "warning", "error"]
 DEFAULT_LLM_MODEL = "openai:gpt-5.5"
+DEFAULT_EDGAR_IDENTITY = "stockagent stockagent@example.com"
 
 
 def default_output_dir() -> Path:
     return Path.cwd() / "output"
-
-
-@dataclass(frozen=True)
-class AppConfig:
-    edgar_identity: str
 
 
 @dataclass(frozen=True)
@@ -35,15 +31,6 @@ class RuntimeOptions:
     years: int
     output_dir: Path = field(default_factory=default_output_dir)
     log_level: LogLevel = "info"
-
-
-def load_app_config() -> AppConfig:
-    load_dotenv()
-    return AppConfig(
-        edgar_identity=os.getenv("STOCKAGENT_EDGAR_IDENTITY", "stock stockagent@gmail.com"),
-    )
-
-
 def load_llm_config() -> LLMConfig:
     load_dotenv()
     api_key = os.getenv("LLM_API_KEY")

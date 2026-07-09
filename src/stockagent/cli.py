@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from stockagent.app import run_stock_analysis
-from stockagent.config import RuntimeOptions, default_output_dir, load_app_config
+from stockagent.config import RuntimeOptions, default_output_dir
 from stockagent.errors import StockAgentError
 from stockagent.observability import get_logger, log_stage_failed, setup_logging
 
@@ -50,9 +50,7 @@ def main() -> None:
     logger.info("初始化运行环境")
 
     try:
-        config = load_app_config()
-        logger.info("应用配置加载完成")
-        run_stock_analysis(options, config)
+        run_stock_analysis(options)
         logger.info("主流程执行完成")
     except StockAgentError as exc:
         log_stage_failed(logger, "主流程执行失败", exc)
