@@ -11,11 +11,10 @@ from stockagent.config import AppConfig
 
 
 class CliTest(unittest.TestCase):
-    def test_parse_args_defaults_to_markdown_report_format(self) -> None:
+    def test_parse_args_defaults(self) -> None:
         options = parse_args(["aapl"])
 
         self.assertEqual(options.ticker, "aapl")
-        self.assertEqual(options.report_format, "md")
         self.assertEqual(options.output_dir, Path.cwd() / "output")
         self.assertEqual(options.log_level, "info")
 

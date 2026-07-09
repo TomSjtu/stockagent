@@ -79,7 +79,6 @@ uv run stock AAPL --years 5 --output-dir output --log-level info
 - `--years`：分析最近几个财年，默认 `3`。
 - `--output-dir`：报告输出目录，默认是当前目录下的 `output/`。
 - `--log-level`：日志级别，可选 `debug`、`info`、`warning`、`error`，默认 `info`。
-- `--report-format`：目前实际可用格式是 `md`。`html` 和 `pdf` 参数已保留，但写入功能尚未实现。
 
 报告文件名格式：
 
@@ -101,7 +100,7 @@ stockagent.cli:main
   -> app.run_stock_analysis()
   -> load_llm_config()
   -> agents.orchestrator.run_stock_analysis_agent()
-  -> report.writer.write_report()
+  -> report.writer.write_markdown_report()
 ```
 
 默认分析流程中：
@@ -130,8 +129,6 @@ src/stockagent/
 
 ## 当前限制
 
-- 报告写入当前只实现 Markdown。
-- `--report-format html|pdf` 在 CLI 中仍可选，但运行时会抛出 `NotImplementedError`。
 - 当前仅完成 `openai:` provider 的模型构建；`anthropic:` 入口预留但未实现。
 - 估值链路已经有 PE / PB / PS 的确定性计算，但市场输入仍来自非结构化搜索结果，可靠性依赖来源质量。
 - CLI 尚未正式暴露 deterministic / agent 模式切换，确定性 fallback 目前主要通过代码入口使用。

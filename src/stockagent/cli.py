@@ -15,12 +15,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("ticker")
     parser.add_argument("--years", type=int, default=3, help="Number of recent fiscal years to analyze.")
     parser.add_argument(
-        "--report-format",
-        choices=["md", "html", "pdf"],
-        default="md",
-        help="Format for generated report.",
-    )
-    parser.add_argument(
         "--output-dir",
         type=Path,
         default=default_output_dir(),
@@ -44,7 +38,6 @@ def parse_args(
     return RuntimeOptions(
         ticker=args.ticker,
         years=args.years,
-        report_format=args.report_format,
         output_dir=args.output_dir,
         log_level=args.log_level,
     )

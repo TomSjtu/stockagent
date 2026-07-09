@@ -3,29 +3,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from stockagent.config import ReportFormat
 from stockagent.observability import get_logger
-
-
-def write_report(
-    ticker: str,
-    content: str,
-    report_format: ReportFormat,
-    output_dir: Path,
-    report_date: date | None = None,
-) -> Path:
-    if report_format == "md":
-        return write_markdown_report(
-            ticker,
-            content,
-            output_dir=output_dir,
-            report_date=report_date,
-        )
-    if report_format == "html":
-        raise NotImplementedError("HTML report writing is not implemented yet.")
-    if report_format == "pdf":
-        raise NotImplementedError("PDF report writing is not implemented yet.")
-    raise ValueError(f"Unsupported report format: {report_format}")
 
 
 def write_markdown_report(

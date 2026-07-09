@@ -124,7 +124,7 @@ class RunStockAnalysisTest(unittest.TestCase):
                 return_value="# Agent Report\n",
             ) as run_agent,
             patch(
-                "stockagent.report.writer.write_report",
+                "stockagent.report.writer.write_markdown_report",
                 return_value=Path("output/FAKE.md"),
             ) as write_report,
         ):
@@ -134,7 +134,6 @@ class RunStockAnalysisTest(unittest.TestCase):
         write_report.assert_called_once_with(
             "fake",
             "# Agent Report\n",
-            report_format="md",
             output_dir=options.output_dir,
         )
         self.assertEqual(output_path, Path("output/FAKE.md"))
@@ -150,7 +149,7 @@ class RunStockAnalysisTest(unittest.TestCase):
                 return_value="# Agent Report\n",
             ),
             patch(
-                "stockagent.report.writer.write_report",
+                "stockagent.report.writer.write_markdown_report",
                 return_value=Path("output/FAKE.md"),
             ),
             self.assertLogs("stockagent.app", level="INFO") as logs,
