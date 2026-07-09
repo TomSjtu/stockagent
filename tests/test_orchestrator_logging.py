@@ -21,11 +21,12 @@ class FakeSuccessfulAgent:
 
 
 class OrchestratorLoggingTest(unittest.TestCase):
-    def test_callback_logs_subagent_and_business_tool_progress(self) -> None:
+    def test_callback_logs_fundamentals_stage_progress(self) -> None:
         handler = _AgentProgressCallbackHandler()
         task_run_id = uuid4()
         chain_run_id = uuid4()
-        tool_run_id = uuid4()
+        fetch_run_id = uuid4()
+        metric_run_id = uuid4()
 
         with self.assertLogs("stockagent.agents.orchestrator", level="INFO") as logs:
             handler.on_tool_start(
@@ -36,25 +37,93 @@ class OrchestratorLoggingTest(unittest.TestCase):
             )
             handler.on_chain_start({}, {}, run_id=chain_run_id, parent_run_id=task_run_id)
             handler.on_tool_start(
-                {"name": "get_full_analysis"},
+                {"name": "fetch_company_financials"},
                 "",
-                run_id=tool_run_id,
+                run_id=fetch_run_id,
                 parent_run_id=chain_run_id,
             )
-            handler.on_tool_end("{}", run_id=tool_run_id, parent_run_id=chain_run_id)
+            handler.on_tool_end("{}", run_id=fetch_run_id, parent_run_id=chain_run_id)
+            handler.on_tool_start(
+                {"name": "compute_profitability_metrics"},
+                "",
+                run_id=metric_run_id,
+                parent_run_id=chain_run_id,
+            )
+            handler.on_tool_end("{}", run_id=metric_run_id, parent_run_id=chain_run_id)
             handler.on_tool_end("done", run_id=task_run_id)
 
         self.assertEqual(
             logs.output,
             [
                 "INFO:stockagent.agents.orchestrator:启动 subagent: fundamentals_analyst",
-                "INFO:stockagent.agents.orchestrator:subagent fundamentals_analyst 调用工具: get_full_analysis",
-                "INFO:stockagent.agents.orchestrator:subagent fundamentals_analyst 工具返回: success",
+                "INFO:stockagent.agents.orchestrator:subagent fundamentals_analyst 开始: 获取公司财务数据",
+                "INFO:stockagent.agents.orchestrator:subagent fundamentals_analyst 完成: 获取公司财务数据",
+                "INFO:stockagent.agents.orchestrator:subagent fundamentals_analyst 开始: 分析盈利能力",
+                "INFO:stockagent.agents.orchestrator:subagent fundamentals_analyst 完成: 分析盈利能力",
                 "INFO:stockagent.agents.orchestrator:subagent fundamentals_analyst 完成",
             ],
         )
 
-    def test_callback_logs_valuation_tool_progress(self) -> None:
+    def test_callback_logs_different_stage_names_for_web_search(self) -> None:
+        handler = _AgentProgressCallbackHandler()
+        industry_task_run_id = uuid4()
+        valuation_task_run_id = uuid4()
+        industry_tool_run_id = uuid4()
+        valuation_tool_run_id = uuid4()
+
+        with self.assertLogs("stockagent.agents.orchestrator", level="INFO") as logs:
+            handler.on_tool_start(
+                {"name": "task"},
+                "",
+                run_id=industry_task_run_id,
+                inputs={"subagent_type": "industry_analyst"},
+            )
+            handler.on_tool_start(
+                {"name": "web_search"},
+                "",
+                run_id=industry_tool_run_id,
+                parent_run_id=industry_task_run_id,
+            )
+            handler.on_tool_end(
+                "{}",
+                run_id=industry_tool_run_id,
+                parent_run_id=industry_task_run_id,
+            )
+            handler.on_tool_end("done", run_id=industry_task_run_id)
+            handler.on_tool_start(
+                {"name": "task"},
+                "",
+                run_id=valuation_task_run_id,
+                inputs={"subagent_type": "valuation_analyst"},
+            )
+            handler.on_tool_start(
+                {"name": "web_search"},
+                "",
+                run_id=valuation_tool_run_id,
+                parent_run_id=valuation_task_run_id,
+            )
+            handler.on_tool_end(
+                "{}",
+                run_id=valuation_tool_run_id,
+                parent_run_id=valuation_task_run_id,
+            )
+            handler.on_tool_end("done", run_id=valuation_task_run_id)
+
+        self.assertEqual(
+            logs.output,
+            [
+                "INFO:stockagent.agents.orchestrator:启动 subagent: industry_analyst",
+                "INFO:stockagent.agents.orchestrator:subagent industry_analyst 开始: 搜索市场与行业信息",
+                "INFO:stockagent.agents.orchestrator:subagent industry_analyst 完成: 搜索市场与行业信息",
+                "INFO:stockagent.agents.orchestrator:subagent industry_analyst 完成",
+                "INFO:stockagent.agents.orchestrator:启动 subagent: valuation_analyst",
+                "INFO:stockagent.agents.orchestrator:subagent valuation_analyst 开始: 搜索股价、市值与同行估值信息",
+                "INFO:stockagent.agents.orchestrator:subagent valuation_analyst 完成: 搜索股价、市值与同行估值信息",
+                "INFO:stockagent.agents.orchestrator:subagent valuation_analyst 完成",
+            ],
+        )
+
+    def test_callback_ignores_unmapped_tool(self) -> None:
         handler = _AgentProgressCallbackHandler()
         task_run_id = uuid4()
         tool_run_id = uuid4()
@@ -64,10 +133,10 @@ class OrchestratorLoggingTest(unittest.TestCase):
                 {"name": "task"},
                 "",
                 run_id=task_run_id,
-                inputs={"subagent_type": "valuation_analyst"},
+                inputs={"subagent_type": "fundamentals_analyst"},
             )
             handler.on_tool_start(
-                {"name": "compute_valuation_metrics"},
+                {"name": "unknown_tool"},
                 "",
                 run_id=tool_run_id,
                 parent_run_id=task_run_id,
@@ -78,15 +147,12 @@ class OrchestratorLoggingTest(unittest.TestCase):
         self.assertEqual(
             logs.output,
             [
-                "INFO:stockagent.agents.orchestrator:启动 subagent: valuation_analyst",
-                "INFO:stockagent.agents.orchestrator:subagent valuation_analyst "
-                "调用工具: compute_valuation_metrics",
-                "INFO:stockagent.agents.orchestrator:subagent valuation_analyst 工具返回: success",
-                "INFO:stockagent.agents.orchestrator:subagent valuation_analyst 完成",
+                "INFO:stockagent.agents.orchestrator:启动 subagent: fundamentals_analyst",
+                "INFO:stockagent.agents.orchestrator:subagent fundamentals_analyst 完成",
             ],
         )
 
-    def test_callback_logs_subagent_and_business_tool_failures(self) -> None:
+    def test_callback_logs_stage_failure_and_subagent_failure(self) -> None:
         handler = _AgentProgressCallbackHandler()
         task_run_id = uuid4()
         tool_run_id = uuid4()
@@ -115,8 +181,8 @@ class OrchestratorLoggingTest(unittest.TestCase):
             logs.output,
             [
                 "INFO:stockagent.agents.orchestrator:启动 subagent: industry_analyst",
-                "INFO:stockagent.agents.orchestrator:subagent industry_analyst 调用工具: web_search",
-                "ERROR:stockagent.agents.orchestrator:subagent industry_analyst 工具返回: failed",
+                "INFO:stockagent.agents.orchestrator:subagent industry_analyst 开始: 搜索市场与行业信息",
+                "ERROR:stockagent.agents.orchestrator:subagent industry_analyst 失败: 搜索市场与行业信息",
                 "ERROR:stockagent.agents.orchestrator:subagent industry_analyst 失败: agent failed",
             ],
         )

@@ -42,15 +42,24 @@ ORCHESTRATOR_PROMPT = """你是一名资深股票研究总监，负责协调团�
 """
 
 _TASK_TOOL_NAME = "task"
-_BUSINESS_TOOL_NAMES = frozenset(
-    {"get_full_analysis", "web_search", "compute_valuation_metrics"}
-)
+_STAGE_DISPLAY_NAMES = {
+    ("industry_analyst", "web_search"): "搜索市场与行业信息",
+    ("fundamentals_analyst", "fetch_company_financials"): "获取公司财务数据",
+    ("fundamentals_analyst", "compute_profitability_metrics"): "分析盈利能力",
+    ("fundamentals_analyst", "compute_growth_metrics"): "分析成长性",
+    ("fundamentals_analyst", "compute_cash_flow_metrics"): "分析现金流",
+    ("fundamentals_analyst", "compute_financial_health_metrics"): "分析财务健康性",
+    ("valuation_analyst", "web_search"): "搜索股价、市值与同行估值信息",
+    ("valuation_analyst", "fetch_company_financials"): "获取估值所需财务数据",
+    ("valuation_analyst", "compute_valuation_metrics"): "计算估值指标",
+}
 
 
 class _AgentProgressCallbackHandler(BaseCallbackHandler):
     def __init__(self) -> None:
         self._logger = get_logger(__name__)
         self._subagents_by_run_id: dict[str, str] = {}
+        self._tool_context_by_run_id: dict[str, tuple[str, str]] = {}
         self._task_run_ids: set[str] = set()
 
     def on_chain_start(
@@ -111,14 +120,16 @@ class _AgentProgressCallbackHandler(BaseCallbackHandler):
             self._logger.info("启动 subagent: %s", subagent_name)
             return
 
-        if tool_name not in _BUSINESS_TOOL_NAMES:
-            return
-
         subagent_name = self._inherit_subagent_context(run_key, parent_key)
         if subagent_name is None:
             return
 
-        self._logger.info("subagent %s 调用工具: %s", subagent_name, tool_name)
+        stage_name = _stage_name(subagent_name, tool_name)
+        if stage_name is None:
+            return
+
+        self._tool_context_by_run_id[run_key] = (subagent_name, tool_name)
+        self._logger.info("subagent %s 开始: %s", subagent_name, stage_name)
 
     def on_tool_end(
         self,
@@ -137,11 +148,17 @@ class _AgentProgressCallbackHandler(BaseCallbackHandler):
             self._logger.info("subagent %s 完成", subagent_name)
             return
 
-        subagent_name = self._subagents_by_run_id.pop(run_key, None)
-        if subagent_name is None:
+        tool_context = self._tool_context_by_run_id.pop(run_key, None)
+        self._subagents_by_run_id.pop(run_key, None)
+        if tool_context is None:
             return
 
-        self._logger.info("subagent %s 工具返回: success", subagent_name)
+        subagent_name, tool_name = tool_context
+        stage_name = _stage_name(subagent_name, tool_name)
+        if stage_name is None:
+            return
+
+        self._logger.info("subagent %s 完成: %s", subagent_name, stage_name)
 
     def on_tool_error(
         self,
@@ -160,11 +177,17 @@ class _AgentProgressCallbackHandler(BaseCallbackHandler):
             self._logger.error("subagent %s 失败: %s", subagent_name, error)
             return
 
-        subagent_name = self._subagents_by_run_id.pop(run_key, None)
-        if subagent_name is None:
+        tool_context = self._tool_context_by_run_id.pop(run_key, None)
+        self._subagents_by_run_id.pop(run_key, None)
+        if tool_context is None:
             return
 
-        self._logger.error("subagent %s 工具返回: failed", subagent_name)
+        subagent_name, tool_name = tool_context
+        stage_name = _stage_name(subagent_name, tool_name)
+        if stage_name is None:
+            return
+
+        self._logger.error("subagent %s 失败: %s", subagent_name, stage_name)
 
     def _inherit_subagent_context(
         self,
@@ -207,6 +230,10 @@ def _subagent_name(inputs: Mapping[str, Any] | None) -> str | None:
     if isinstance(value, str) and value:
         return value
     return None
+
+
+def _stage_name(subagent_name: str, tool_name: str) -> str | None:
+    return _STAGE_DISPLAY_NAMES.get((subagent_name, tool_name))
 
 
 def _run_key(run_id: Any | None) -> str | None:
