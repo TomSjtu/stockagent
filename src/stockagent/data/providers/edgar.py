@@ -11,7 +11,7 @@ from stockagent.data.errors import (
     ProviderError,
     ProviderResponseError,
 )
-from stockagent.financials.models import FinancialRecord
+from stockagent.financials import FinancialRecord
 
 FieldConceptMap = dict[str, tuple[str, ...]]
 

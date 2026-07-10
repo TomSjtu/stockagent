@@ -4,12 +4,12 @@ import json
 import unittest
 from unittest.mock import patch
 
-from stockagent.financials.models import (
+from stockagent.financials import (
     FinancialRecord,
     ProfitabilityMetrics,
     ValuationMetrics,
 )
-from stockagent.tools.financials import (
+from stockagent.tools import (
     compute_valuation_metrics,
     compute_profitability_metrics,
     fetch_company_financials,

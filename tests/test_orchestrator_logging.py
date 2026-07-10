@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from stockagent.agents.orchestrator import run_stock_analysis_agent
+from stockagent.agents import run_stock_analysis_agent
 from stockagent.agents.subagent_progress import SubagentProgressCallbackHandler
 from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
 

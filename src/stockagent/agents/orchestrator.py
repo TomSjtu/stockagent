@@ -12,8 +12,7 @@ from stockagent.agents.valuation_agent import valuation_subagent
 from stockagent.config import LLMConfig, apply_llm_environment
 from stockagent.llm import build_model
 from stockagent.observability import get_logger
-from stockagent.tools.financials import get_full_analysis
-from stockagent.tools.search import web_search
+from stockagent.tools import get_full_analysis, web_search
 
 ORCHESTRATOR_PROMPT = """你是一名资深股票研究总监，负责协调团队完成中文股票分析报告。
 

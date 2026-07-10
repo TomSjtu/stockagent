@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stockagent.financials.models import ProfitabilityMetrics
+from stockagent.financials import ProfitabilityMetrics
 from stockagent.fundamentals.inputs import ProfitabilityInput
 
 

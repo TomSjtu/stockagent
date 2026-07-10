@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stockagent.tools.financials import (
+from stockagent.tools import (
     compute_financial_health_metrics,
     fetch_company_financials,
 )

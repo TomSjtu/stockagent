@@ -7,7 +7,7 @@ import types
 import unittest
 from unittest.mock import Mock
 
-from stockagent.tools.search import web_search
+from stockagent.tools import web_search
 
 
 class SearchToolTest(unittest.TestCase):

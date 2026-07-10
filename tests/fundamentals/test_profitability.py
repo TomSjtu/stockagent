@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from stockagent.financials.models import FinancialRecord
-from stockagent.fundamentals.inputs import ProfitabilityInput, build_profitability_inputs
-from stockagent.fundamentals.profitability import (
+from stockagent.financials import FinancialRecord
+from stockagent.fundamentals import (
+    ProfitabilityInput,
+    build_profitability_inputs,
     compute_profitability,
     compute_profitability_series,
 )

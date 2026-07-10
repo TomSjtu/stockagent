@@ -5,7 +5,7 @@ import unittest
 import pandas as pd
 
 from stockagent.data.errors import NoDataError, ProviderResponseError
-from stockagent.data.providers.edgar import EdgarFinancialsProvider
+from stockagent.data.providers import EdgarFinancialsProvider
 
 
 class FakeCompany:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stockagent.tools.search import web_search
+from stockagent.tools import web_search
 
 industry_subagent = {
     "name": "industry_analyst",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stockagent.financials.models import FinancialHealthMetrics
+from stockagent.financials import FinancialHealthMetrics
 from stockagent.fundamentals.inputs import FinancialHealthInput
 
 

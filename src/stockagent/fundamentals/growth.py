@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stockagent.financials.models import GrowthMetrics
+from stockagent.financials import GrowthMetrics
 from stockagent.fundamentals.inputs import GrowthInput
 
 
@@ -26,6 +26,11 @@ def _free_cash_flow(gi: GrowthInput) -> float | None:
     if gi.operating_cash_flow is None or gi.capex is None:
         return None
     return gi.operating_cash_flow - gi.capex
+
+
+def compute_growth(gi: GrowthInput) -> GrowthMetrics:
+    """Compute growth metrics for a single fiscal year."""
+    return compute_growth_series([gi])[0]
 
 
 def compute_growth_series(inputs: list[GrowthInput]) -> list[GrowthMetrics]:

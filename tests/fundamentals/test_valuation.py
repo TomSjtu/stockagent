@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from stockagent.financials.models import FinancialRecord
-from stockagent.fundamentals.inputs import ValuationInput, build_valuation_input
-from stockagent.fundamentals.valuation import compute_valuation
+from stockagent.financials import FinancialRecord
+from stockagent.fundamentals import (
+    ValuationInput,
+    build_valuation_input,
+    compute_valuation,
+)
 
 
 class ValuationInputTest(unittest.TestCase):

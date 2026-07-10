@@ -7,7 +7,7 @@ from typing import Protocol, TypeVar
 
 from stockagent.config import DEFAULT_EDGAR_IDENTITY
 from stockagent.data.errors import NoDataError
-from stockagent.financials.models import (
+from stockagent.financials import (
     CashFlowMetrics,
     FinancialHealthMetrics,
     FinancialRecord,
@@ -15,18 +15,16 @@ from stockagent.financials.models import (
     ProfitabilityMetrics,
     ValuationMetrics,
 )
-from stockagent.fundamentals.cash_flow import compute_cash_flow_series
-from stockagent.fundamentals.financial_health import compute_financial_health_series
-from stockagent.fundamentals.growth import compute_growth_series
-from stockagent.fundamentals.inputs import (
+from stockagent.fundamentals import (
     build_cash_flow_inputs,
     build_financial_health_inputs,
     build_growth_inputs,
     build_profitability_inputs,
     build_valuation_input,
-)
-from stockagent.fundamentals.profitability import compute_profitability_series
-from stockagent.fundamentals.valuation import (
+    compute_cash_flow_series,
+    compute_financial_health_series,
+    compute_growth_series,
+    compute_profitability_series,
     compute_valuation as compute_valuation_from_input,
 )
 
@@ -58,7 +56,7 @@ def _fetch_financials_cached(
     years: int = 3,
 ) -> tuple[FinancialRecord, ...]:
     from edgar import set_identity
-    from stockagent.data.providers.edgar import EdgarFinancialsProvider
+    from stockagent.data.providers import EdgarFinancialsProvider
 
     set_identity(DEFAULT_EDGAR_IDENTITY)
 

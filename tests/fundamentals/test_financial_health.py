@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from stockagent.financials.models import FinancialRecord
-from stockagent.fundamentals.financial_health import (
-    compute_financial_health,
-    compute_financial_health_series,
-)
-from stockagent.fundamentals.inputs import (
+from stockagent.financials import FinancialRecord
+from stockagent.fundamentals import (
     FinancialHealthInput,
     build_financial_health_inputs,
+    compute_financial_health,
+    compute_financial_health_series,
 )
 
 

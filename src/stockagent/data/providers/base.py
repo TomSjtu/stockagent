@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from stockagent.financials.models import FinancialRecord
+from stockagent.financials import FinancialRecord
 
 
 class FinancialsProvider(Protocol):

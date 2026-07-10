@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stockagent.financials.models import CashFlowMetrics
+from stockagent.financials import CashFlowMetrics
 from stockagent.fundamentals.inputs import CashFlowInput
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from stockagent.financials.models import FinancialRecord
+from stockagent.financials import FinancialRecord
 
 
 @dataclass(slots=True, frozen=True)
@@ -51,6 +51,8 @@ class ProfitabilityInput:
             current_liabilities=record.current_liabilities,
             shareholders_equity=record.shareholders_equity,
         )
+
+
 
 @dataclass(slots=True, frozen=True)
 class FinancialHealthInput:

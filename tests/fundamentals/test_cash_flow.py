@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from stockagent.financials.models import FinancialRecord
-from stockagent.fundamentals.cash_flow import compute_cash_flow, compute_cash_flow_series
-from stockagent.fundamentals.inputs import CashFlowInput, build_cash_flow_inputs
+from stockagent.financials import FinancialRecord
+from stockagent.fundamentals import (
+    CashFlowInput,
+    build_cash_flow_inputs,
+    compute_cash_flow,
+    compute_cash_flow_series,
+)
 
 
 class CashFlowInputTest(unittest.TestCase):

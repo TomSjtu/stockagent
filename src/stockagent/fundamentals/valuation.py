@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from stockagent.financials.models import ValuationMetrics
+from stockagent.financials import ValuationMetrics
 from stockagent.fundamentals.inputs import ValuationInput
 
 

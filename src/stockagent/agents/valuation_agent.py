@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from stockagent.tools.financials import (
+from stockagent.tools import (
     compute_valuation_metrics,
     fetch_company_financials,
+    web_search,
 )
-from stockagent.tools.search import web_search
 
 valuation_subagent = {
     "name": "valuation_analyst",

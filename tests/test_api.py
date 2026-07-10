@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from stockagent import api
-from stockagent.financials.models import FinancialRecord
+from stockagent.financials import FinancialRecord
 
 
 class ApiTest(unittest.TestCase):

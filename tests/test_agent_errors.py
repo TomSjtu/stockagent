@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from stockagent.agents import run_stock_analysis_agent
 from stockagent.agents.errors import LLMResponseError, LLMTimeoutError
-from stockagent.agents.orchestrator import run_stock_analysis_agent
 from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
 from stockagent.errors import ConfigurationError
 from stockagent.llm import (
