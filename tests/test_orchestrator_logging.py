@@ -4,10 +4,8 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from stockagent.agents.orchestrator import (
-    _AgentProgressCallbackHandler,
-    run_stock_analysis_agent,
-)
+from stockagent.agents.orchestrator import run_stock_analysis_agent
+from stockagent.agents.subagent_progress import SubagentProgressCallbackHandler
 from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
 
 
@@ -22,7 +20,7 @@ class FakeSuccessfulAgent:
 
 class OrchestratorLoggingTest(unittest.TestCase):
     def test_callback_logs_fundamentals_stage_progress(self) -> None:
-        handler = _AgentProgressCallbackHandler()
+        handler = SubagentProgressCallbackHandler()
         task_run_id = uuid4()
         chain_run_id = uuid4()
         fetch_run_id = uuid4()
@@ -65,7 +63,7 @@ class OrchestratorLoggingTest(unittest.TestCase):
         )
 
     def test_callback_logs_different_stage_names_for_web_search(self) -> None:
-        handler = _AgentProgressCallbackHandler()
+        handler = SubagentProgressCallbackHandler()
         industry_task_run_id = uuid4()
         valuation_task_run_id = uuid4()
         industry_tool_run_id = uuid4()
@@ -124,7 +122,7 @@ class OrchestratorLoggingTest(unittest.TestCase):
         )
 
     def test_callback_ignores_unmapped_tool(self) -> None:
-        handler = _AgentProgressCallbackHandler()
+        handler = SubagentProgressCallbackHandler()
         task_run_id = uuid4()
         tool_run_id = uuid4()
 
@@ -153,7 +151,7 @@ class OrchestratorLoggingTest(unittest.TestCase):
         )
 
     def test_callback_logs_stage_failure_and_subagent_failure(self) -> None:
-        handler = _AgentProgressCallbackHandler()
+        handler = SubagentProgressCallbackHandler()
         task_run_id = uuid4()
         tool_run_id = uuid4()
 
@@ -205,7 +203,7 @@ class OrchestratorLoggingTest(unittest.TestCase):
         self.assertIsNotNone(agent.config)
         callbacks = agent.config["callbacks"] if agent.config is not None else []
         self.assertEqual(len(callbacks), 1)
-        self.assertIsInstance(callbacks[0], _AgentProgressCallbackHandler)
+        self.assertIsInstance(callbacks[0], SubagentProgressCallbackHandler)
 
 
 if __name__ == "__main__":

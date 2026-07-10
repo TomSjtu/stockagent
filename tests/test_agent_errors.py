@@ -4,14 +4,14 @@ import unittest
 from unittest.mock import patch
 
 from stockagent.agents.errors import LLMResponseError, LLMTimeoutError
-from stockagent.agents.orchestrator import (
-    _build_model,
-    _is_native_openai_base_url,
-    build_openai_model,
-    run_stock_analysis_agent,
-)
+from stockagent.agents.orchestrator import run_stock_analysis_agent
 from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
 from stockagent.errors import ConfigurationError
+from stockagent.llm import (
+    _is_native_openai_base_url,
+    build_model,
+    build_openai_model,
+)
 
 
 class FakeAgent:
@@ -39,10 +39,10 @@ class AgentErrorsTest(unittest.TestCase):
         )
 
         with patch(
-            "stockagent.agents.orchestrator.build_openai_model",
+            "stockagent.llm.build_openai_model",
             return_value="openai-model",
         ) as build_openai_model:
-            model = _build_model(llm_config)
+            model = build_model(llm_config)
 
         build_openai_model.assert_called_once_with(llm_config, "gpt-5.5")
         self.assertEqual(model, "openai-model")
@@ -55,10 +55,10 @@ class AgentErrorsTest(unittest.TestCase):
         )
 
         with patch(
-            "stockagent.agents.orchestrator.build_anthropic_model",
+            "stockagent.llm.build_anthropic_model",
             return_value="anthropic-model",
         ) as build_anthropic_model:
-            model = _build_model(llm_config)
+            model = build_model(llm_config)
 
         build_anthropic_model.assert_called_once_with(llm_config, "claude-sonnet-4-6")
         self.assertEqual(model, "anthropic-model")
@@ -71,7 +71,7 @@ class AgentErrorsTest(unittest.TestCase):
         )
 
         with self.assertRaises(ConfigurationError):
-            _build_model(llm_config)
+            build_model(llm_config)
 
     def test_build_model_rejects_unknown_provider(self) -> None:
         llm_config = LLMConfig(
@@ -81,7 +81,7 @@ class AgentErrorsTest(unittest.TestCase):
         )
 
         with self.assertRaises(ConfigurationError):
-            _build_model(llm_config)
+            build_model(llm_config)
 
     def test_run_stock_analysis_agent_wraps_timeout_errors(self) -> None:
         llm_config = LLMConfig(
