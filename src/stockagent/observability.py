@@ -21,6 +21,10 @@ def setup_logging(level: LogLevel = "info") -> None:
         stream=sys.stderr,
         force=True,
     )
+    logging.getLogger("httpx").setLevel(
+        logging.INFO if level == "debug" else logging.WARNING
+    )
+    logging.getLogger("edgar").setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:
