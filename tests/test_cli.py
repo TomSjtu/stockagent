@@ -27,6 +27,25 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(options.log_level, "warning")
 
+    def test_parse_args_rejects_invalid_years(self) -> None:
+        for years in ("0", "-1", "1.5"):
+            with self.subTest(years=years):
+                with self.assertRaises(SystemExit) as raised:
+                    parse_args(["aapl", "--years", years])
+
+                self.assertEqual(raised.exception.code, 2)
+
+    def test_main_rejects_invalid_years_before_starting_analysis(self) -> None:
+        with (
+            patch.object(sys, "argv", ["stock", "aapl", "--years", "0"]),
+            patch("stockagent.cli.run_stock_analysis") as run_analysis,
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main()
+
+        self.assertEqual(raised.exception.code, 2)
+        run_analysis.assert_not_called()
+
     def test_main_does_not_print_final_report_path_to_stdout(self) -> None:
         stdout = io.StringIO()
 

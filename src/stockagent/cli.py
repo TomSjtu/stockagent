@@ -10,10 +10,26 @@ from stockagent.errors import StockAgentError
 from stockagent.observability import get_logger, log_stage_failed, setup_logging
 
 
+def _positive_int(value: str) -> int:
+    try:
+        years = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+
+    if years <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return years
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("ticker")
-    parser.add_argument("--years", type=int, default=3, help="Number of recent fiscal years to analyze.")
+    parser.add_argument(
+        "--years",
+        type=_positive_int,
+        default=3,
+        help="Number of recent fiscal years to analyze.",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,

@@ -4,19 +4,46 @@ import json
 import unittest
 from unittest.mock import patch
 
+from stockagent.data.errors import MissingFiscalYearsError
 from stockagent.financials import (
     FinancialRecord,
     ProfitabilityMetrics,
     ValuationMetrics,
 )
 from stockagent.tools import (
-    compute_valuation_metrics,
+    compute_cash_flow_metrics,
+    compute_financial_health_metrics,
+    compute_growth_metrics,
     compute_profitability_metrics,
+    compute_valuation_metrics,
     fetch_company_financials,
+    get_full_analysis,
 )
 
 
 class FinancialToolsTest(unittest.TestCase):
+    def test_financial_tools_propagate_missing_fiscal_years_error(self) -> None:
+        error = MissingFiscalYearsError("aapl", (2024,))
+
+        for tool in (
+            fetch_company_financials,
+            compute_profitability_metrics,
+            compute_growth_metrics,
+            compute_cash_flow_metrics,
+            compute_financial_health_metrics,
+            compute_valuation_metrics,
+            get_full_analysis,
+        ):
+            with self.subTest(tool=tool.__name__):
+                with patch(
+                    "stockagent.tools.financials.api.fetch_financials",
+                    side_effect=error,
+                ):
+                    with self.assertRaises(MissingFiscalYearsError) as raised:
+                        tool("aapl", years=3)
+
+                self.assertIs(raised.exception, error)
+
     def test_fetch_company_financials_serializes_records(self) -> None:
         records = (
             FinancialRecord(
@@ -27,14 +54,18 @@ class FinancialToolsTest(unittest.TestCase):
             ),
         )
 
-        with patch("stockagent.tools.financials.api.fetch_financials", return_value=records):
+        with patch(
+            "stockagent.tools.financials.api.fetch_financials", return_value=records
+        ):
             payload = json.loads(fetch_company_financials("aapl", 1))
 
         self.assertEqual(payload["ticker"], "AAPL")
         self.assertEqual(payload["records"][0]["fiscal_year"], 2024)
         self.assertEqual(payload["records"][0]["revenue"], 100.0)
 
-    def test_compute_profitability_metrics_serializes_year_keys_as_strings(self) -> None:
+    def test_compute_profitability_metrics_serializes_year_keys_as_strings(
+        self,
+    ) -> None:
         records = (
             FinancialRecord(
                 ticker="AAPL",
@@ -44,10 +75,14 @@ class FinancialToolsTest(unittest.TestCase):
         )
 
         with (
-            patch("stockagent.tools.financials.api.fetch_financials", return_value=records),
+            patch(
+                "stockagent.tools.financials.api.fetch_financials", return_value=records
+            ),
             patch(
                 "stockagent.tools.financials.api.compute_profitability",
-                return_value={2024: ProfitabilityMetrics(fiscal_year=2024, gross_margin=0.42)},
+                return_value={
+                    2024: ProfitabilityMetrics(fiscal_year=2024, gross_margin=0.42)
+                },
             ),
         ):
             payload = json.loads(compute_profitability_metrics("aapl", 1))
@@ -130,7 +165,9 @@ class FinancialToolsTest(unittest.TestCase):
                 return_value=metrics,
             ),
         ):
-            payload = json.loads(compute_valuation_metrics("aapl", price=200.0, years=1))
+            payload = json.loads(
+                compute_valuation_metrics("aapl", price=200.0, years=1)
+            )
 
         self.assertNotIn("pe_ratio", payload["unavailable"])
         self.assertEqual(

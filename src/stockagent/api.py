@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
-
 from typing import Protocol, TypeVar
 
 from stockagent.config import DEFAULT_EDGAR_IDENTITY
-from stockagent.data.errors import NoDataError
+from stockagent.data.errors import MissingFiscalYearsError, NoDataError
 from stockagent.financials import (
     CashFlowMetrics,
     FinancialHealthMetrics,
@@ -25,6 +24,8 @@ from stockagent.fundamentals import (
     compute_financial_health_series,
     compute_growth_series,
     compute_profitability_series,
+)
+from stockagent.fundamentals import (
     compute_valuation as compute_valuation_from_input,
 )
 
@@ -46,8 +47,11 @@ class AnalysisResult:
 
 
 def fetch_financials(ticker: str, years: int = 3) -> tuple[FinancialRecord, ...]:
-    """Fetch normalized annual financial records from EDGAR."""
-    return _fetch_financials_cached(ticker.upper(), years)
+    """Fetch a complete, ascending annual financial-record window from EDGAR."""
+    _validate_years(years)
+    normalized_ticker = ticker.upper()
+    records = _fetch_financials_cached(normalized_ticker, years)
+    return _complete_fiscal_year_window(normalized_ticker, records, years)
 
 
 @lru_cache(maxsize=32)
@@ -56,6 +60,7 @@ def _fetch_financials_cached(
     years: int = 3,
 ) -> tuple[FinancialRecord, ...]:
     from edgar import set_identity
+
     from stockagent.data.providers import EdgarFinancialsProvider
 
     set_identity(DEFAULT_EDGAR_IDENTITY)
@@ -65,10 +70,37 @@ def _fetch_financials_cached(
     if not records:
         raise NoDataError(
             ticker=normalized_ticker,
-            provider=provider.__class__.__name__,
+            provider="edgar",
             detail="provider returned no annual records",
         )
     return tuple(records)
+
+
+def _validate_years(years: object) -> None:
+    if isinstance(years, bool) or not isinstance(years, int) or years <= 0:
+        raise ValueError("years must be a positive integer")
+
+
+def _complete_fiscal_year_window(
+    ticker: str,
+    records: tuple[FinancialRecord, ...],
+    years: int,
+) -> tuple[FinancialRecord, ...]:
+    records_by_year = {record.fiscal_year: record for record in records}
+    latest_year = max(records_by_year)
+    target_years = range(latest_year - years + 1, latest_year + 1)
+    missing_fiscal_years = tuple(
+        fiscal_year
+        for fiscal_year in target_years
+        if fiscal_year not in records_by_year
+    )
+    if missing_fiscal_years:
+        raise MissingFiscalYearsError(ticker, missing_fiscal_years)
+
+    return tuple(
+        replace(records_by_year[fiscal_year], ticker=ticker)
+        for fiscal_year in target_years
+    )
 
 
 def compute_profitability(

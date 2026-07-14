@@ -76,7 +76,7 @@ uv run stock AAPL --years 5 --output-dir output --log-level info
 参数说明：
 
 - `ticker`：必填，美股 ticker，例如 `AAPL`。
-- `--years`：分析最近几个财年，默认 `3`。
+- `--years`：分析最近几个财年，必须是正整数，默认 `3`。请求的财年必须连续且完整；数据不足时研究会失败，不会缩短窗口。
 - `--output-dir`：报告输出目录，默认是当前目录下的 `output/`。
 - `--log-level`：日志级别，可选 `debug`、`info`、`warning`、`error`，默认 `info`。
 

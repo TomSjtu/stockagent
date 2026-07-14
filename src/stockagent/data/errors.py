@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from stockagent.errors import StockAgentError
 
 
@@ -19,6 +21,20 @@ class NoDataError(ProviderError):
         if detail:
             message += f": {detail}"
         super().__init__(message)
+
+
+class MissingFiscalYearsError(ProviderError):
+    """Requested annual-record window is missing one or more fiscal years."""
+
+    def __init__(self, ticker: str, missing_fiscal_years: Iterable[int]) -> None:
+        self.ticker = ticker.upper()
+        self.provider = "edgar"
+        self.missing_fiscal_years = tuple(sorted(set(missing_fiscal_years)))
+
+        years = ", ".join(str(year) for year in self.missing_fiscal_years)
+        super().__init__(
+            f"Missing fiscal years for {self.ticker!r} from {self.provider}: {years}"
+        )
 
 
 class ProviderRateLimitError(ProviderError):
