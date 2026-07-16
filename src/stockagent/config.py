@@ -57,9 +57,7 @@ def apply_llm_environment(config: LLMConfig) -> None:
     provider, _, _model_name = config.model.partition(":")
     provider = provider.lower()
 
-    if provider == "anthropic":
-        os.environ.setdefault("ANTHROPIC_API_KEY", config.api_key)
-    elif provider == "openai":
+    if provider == "openai":
         os.environ.setdefault("OPENAI_API_KEY", config.api_key)
         if config.base_url:
             os.environ.setdefault("OPENAI_BASE_URL", config.base_url)

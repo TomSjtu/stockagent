@@ -15,7 +15,6 @@ def build_model(llm_config: LLMConfig):
 
     builders = {
         "openai": build_openai_model,
-        "anthropic": build_anthropic_model,
     }
     builder = builders.get(provider.lower())
     if builder is None:
@@ -38,10 +37,6 @@ def build_openai_model(llm_config: LLMConfig, model_name: str):
     return ChatOpenAI(
         **llm_kwargs,
     )
-
-
-def build_anthropic_model(llm_config: LLMConfig, model_name: str):
-    pass
 
 
 def _is_native_openai_base_url(base_url: str | None) -> bool:

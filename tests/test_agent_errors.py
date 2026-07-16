@@ -47,21 +47,15 @@ class AgentErrorsTest(unittest.TestCase):
         build_openai_model.assert_called_once_with(llm_config, "gpt-5.5")
         self.assertEqual(model, "openai-model")
 
-    def test_build_model_keeps_anthropic_provider_interface(self) -> None:
+    def test_build_model_rejects_anthropic_provider(self) -> None:
         llm_config = LLMConfig(
             api_key="test-key",
             base_url="",
             model="anthropic:claude-sonnet-4-6",
         )
 
-        with patch(
-            "stockagent.llm.build_anthropic_model",
-            return_value="anthropic-model",
-        ) as build_anthropic_model:
-            model = build_model(llm_config)
-
-        build_anthropic_model.assert_called_once_with(llm_config, "claude-sonnet-4-6")
-        self.assertEqual(model, "anthropic-model")
+        with self.assertRaises(ConfigurationError):
+            build_model(llm_config)
 
     def test_build_model_requires_provider_prefix(self) -> None:
         llm_config = LLMConfig(

@@ -59,7 +59,7 @@ TAVILY_API_KEY=tvly-...
 
 EDGAR 请求身份标识固定为 `stockagent stockagent@example.com`。
 
-当前已实现的模型构建路径是 OpenAI 兼容模型。`anthropic:` provider 的环境变量映射已预留，但模型构建函数尚未完成。
+当前支持的模型构建路径是 OpenAI 兼容模型，`LLM_MODEL` 使用 `openai:<model-name>` 格式。
 
 ## 运行
 
@@ -127,5 +127,5 @@ src/stockagent/
 
 ## 当前限制
 
-- 当前仅完成 `openai:` provider 的模型构建；`anthropic:` 入口预留但未实现。
+- 当前仅支持 `openai:` provider 的模型构建。
 - 估值链路已经有 PE / PB / PS 的确定性计算，但市场输入仍来自非结构化搜索结果，可靠性依赖来源质量。
