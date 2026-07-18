@@ -4,6 +4,7 @@ import json
 import unittest
 from unittest.mock import patch
 
+from stockagent import tools
 from stockagent.data.errors import MissingFiscalYearsError
 from stockagent.financials import (
     FinancialRecord,
@@ -17,7 +18,7 @@ from stockagent.tools import (
     compute_profitability_metrics,
     compute_valuation_metrics,
     fetch_company_financials,
-    get_full_analysis,
+    get_fundamentals_analysis,
 )
 
 
@@ -32,7 +33,7 @@ class FinancialToolsTest(unittest.TestCase):
             compute_cash_flow_metrics,
             compute_financial_health_metrics,
             compute_valuation_metrics,
-            get_full_analysis,
+            get_fundamentals_analysis,
         ):
             with self.subTest(tool=tool.__name__):
                 with patch(
@@ -43,6 +44,9 @@ class FinancialToolsTest(unittest.TestCase):
                         tool("aapl", years=3)
 
                 self.assertIs(raised.exception, error)
+
+    def test_old_full_analysis_name_is_not_exported(self) -> None:
+        self.assertFalse(hasattr(tools, "get_full_analysis"))
 
     def test_fetch_company_financials_serializes_records(self) -> None:
         records = (

@@ -82,7 +82,7 @@ def compute_valuation_metrics(
     )
 
 
-def get_full_analysis(ticker: str, years: int = 3) -> str:
+def get_fundamentals_analysis(ticker: str, years: int = 3) -> str:
     """Fetch records and compute all deterministic financial metrics."""
     result = api.analyze(ticker, years)
     return _to_json(result)

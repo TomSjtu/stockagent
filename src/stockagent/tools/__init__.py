@@ -7,7 +7,7 @@ from stockagent.tools.financials import (
     compute_profitability_metrics,
     compute_valuation_metrics,
     fetch_company_financials,
-    get_full_analysis,
+    get_fundamentals_analysis,
 )
 from stockagent.tools.search import web_search
 
@@ -18,6 +18,6 @@ __all__ = [
     "compute_profitability_metrics",
     "compute_valuation_metrics",
     "fetch_company_financials",
-    "get_full_analysis",
+    "get_fundamentals_analysis",
     "web_search",
 ]

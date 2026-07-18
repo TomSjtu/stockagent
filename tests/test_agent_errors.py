@@ -4,7 +4,12 @@ import unittest
 from unittest.mock import patch
 
 from stockagent.agents import run_stock_analysis_agent
-from stockagent.agents.errors import LLMResponseError, LLMTimeoutError
+from stockagent.agents.errors import (
+    AgentError,
+    AgentOutputError,
+    LLMResponseError,
+    LLMTimeoutError,
+)
 from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
 from stockagent.errors import ConfigurationError
 from stockagent.llm import (
@@ -23,6 +28,9 @@ class FakeAgent:
 
 
 class AgentErrorsTest(unittest.TestCase):
+    def test_agent_output_error_is_an_agent_error(self) -> None:
+        self.assertTrue(issubclass(AgentOutputError, AgentError))
+
     def test_native_openai_base_url_detection(self) -> None:
         self.assertTrue(_is_native_openai_base_url(None))
         self.assertTrue(_is_native_openai_base_url(""))
