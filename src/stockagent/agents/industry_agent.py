@@ -1,6 +1,33 @@
 from __future__ import annotations
 
+from langchain.agents import create_agent
+from langchain.agents.structured_output import ToolStrategy
+from langchain_core.language_models import BaseChatModel
+
+from stockagent.agents.state import IndustryOutput
 from stockagent.tools import web_search
+
+INDUSTRY_PROMPT = (
+    "你是一名行业研究分析师。使用 web_search 获取目标公司所在行业的最新信息，"
+    "行业趋势优先使用 topic='finance'，近期新闻优先使用 topic='news' 和 "
+    "time_range='month'。\n\n"
+    "分析必须覆盖：\n"
+    "1. 行业概况与发展趋势\n"
+    "2. 竞争格局与主要竞争对手\n"
+    "3. 公司市场地位与竞争优势\n"
+    "4. 行业驱动因素与潜在挑战\n\n"
+    "以 IndustryOutput 返回中文分析正文和使用过的来源链接。"
+)
+
+
+def build_industry_agent(model: BaseChatModel):
+    return create_agent(
+        model=model,
+        tools=[web_search],
+        system_prompt=INDUSTRY_PROMPT,
+        response_format=ToolStrategy(IndustryOutput, handle_errors=False),
+    )
+
 
 industry_subagent = {
     "name": "industry_analyst",
