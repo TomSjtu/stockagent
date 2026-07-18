@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import StateNode
 
 from stockagent.agents.errors import LLMError, classify_llm_error
 from stockagent.agents.fundamentals_agent import fundamentals_subagent
 from stockagent.agents.industry_agent import industry_subagent
 from stockagent.agents.risk_agent import risk_subagent
+from stockagent.agents.state import AnalysisState
 from stockagent.agents.subagent_progress import SubagentProgressCallbackHandler
 from stockagent.agents.valuation_agent import valuation_subagent
 from stockagent.config import LLMConfig, apply_llm_environment
@@ -36,6 +41,32 @@ ORCHESTRATOR_PROMPT = """你是一名资深股票研究总监，负责协调团�
 重要：最后一条回复必须直接输出完整 Markdown 报告正文。
 
 """
+
+
+@dataclass(frozen=True)
+class AnalysisNodes:
+    industry: StateNode
+    fundamentals: StateNode
+    valuation: StateNode
+    risk: StateNode
+    synthesize: StateNode
+
+
+def build_analysis_graph(nodes: AnalysisNodes):
+    graph = StateGraph(AnalysisState)
+    graph.add_node("industry", nodes.industry)
+    graph.add_node("fundamentals", nodes.fundamentals)
+    graph.add_node("valuation", nodes.valuation)
+    graph.add_node("risk", nodes.risk)
+    graph.add_node("synthesize", nodes.synthesize)
+
+    graph.add_edge(START, "industry")
+    graph.add_edge(START, "fundamentals")
+    graph.add_edge(["industry", "fundamentals"], "valuation")
+    graph.add_edge("valuation", "risk")
+    graph.add_edge("risk", "synthesize")
+    graph.add_edge("synthesize", END)
+    return graph.compile()
 
 
 def create_stock_analysis_agent(llm_config: LLMConfig):
