@@ -45,8 +45,20 @@ class FinancialToolsTest(unittest.TestCase):
 
                 self.assertIs(raised.exception, error)
 
-    def test_old_full_analysis_name_is_not_exported(self) -> None:
-        self.assertFalse(hasattr(tools, "get_full_analysis"))
+    def test_tools_export_the_current_adapters(self) -> None:
+        self.assertEqual(
+            set(tools.__all__),
+            {
+                "compute_cash_flow_metrics",
+                "compute_financial_health_metrics",
+                "compute_growth_metrics",
+                "compute_profitability_metrics",
+                "compute_valuation_metrics",
+                "fetch_company_financials",
+                "get_fundamentals_analysis",
+                "web_search",
+            },
+        )
 
     def test_fetch_company_financials_serializes_records(self) -> None:
         records = (

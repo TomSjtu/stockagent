@@ -1,4 +1,4 @@
-"""DeepAgents orchestration for stock analysis."""
+"""LangGraph orchestration for stock analysis."""
 
 from stockagent.config import LLMConfig
 
