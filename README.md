@@ -1,6 +1,6 @@
 # stockagent
 
-`stockagent` 是一个面向美股的命令行股票分析工具。当前默认流程会用 DeepAgents 编排多个分析子 Agent，结合 SEC EDGAR 财务数据、Tavily 搜索结果和 LLM，生成中文 Markdown 股票研究报告。
+`stockagent` 是一个面向美股的命令行股票分析工具。当前默认流程使用 LangGraph 显式编排多个分析 Agent，结合 SEC EDGAR 财务数据、Tavily 搜索结果和 LLM，生成中文 Markdown 股票研究报告。
 
 > 生成内容仅用于研究和学习，不构成投资建议。
 
@@ -9,7 +9,7 @@
 - 拉取 SEC EDGAR 年度财务数据，并标准化为项目内部的财务记录。
 - 计算盈利能力、现金流、财务健康度、成长性等基本面指标。
 - 基于最新财年数据和外部市场输入，确定性计算 trailing PE / PB / PS。
-- 通过 DeepAgents 编排行业、基本面、估值、风险四类子 Agent。
+- 通过 LangGraph DAG 编排行、基本面、估值、风险四类分析 Agent。
 - 使用 Tavily 补充行业趋势、公司动态和市场信息。
 - 输出中文 Markdown 报告，并在 CLI 运行过程中打印关键阶段日志。
 
@@ -106,7 +106,7 @@ stockagent.cli:main
 - `industry_analyst` 使用 `web_search` 做行业和近期信息收集。
 - `fundamentals_analyst` 使用 EDGAR 财务数据和确定性指标工具做基本面分析。
 - `valuation_analyst` 会结合 `web_search` 提取的市场输入，调用 `compute_valuation_metrics()` 计算 trailing PE / PB / PS。
-- `risk_analyst` 会综合前序分析与财务健康指标给出风险评估。
+- `risk_analyst` 会综合前序结构化分析并补充近期公司风险信息。
 
 ## 项目结构
 
@@ -115,8 +115,8 @@ src/stockagent/
   cli.py                 # CLI 参数解析和入口
   app.py                 # 应用编排入口
   config.py              # .env 和运行配置
-  api.py                 # 确定性分析和 DeepAgents 工具统一接口
-  agents/                # DeepAgents 主编排和分析子 Agent
+  api.py                 # 确定性分析和 Agent 工具统一接口
+  agents/                # LangGraph 主编排和分析 Agent
   tools/                 # Agent 可调用工具
   data/providers/        # EDGAR 数据提供方
   fundamentals/          # 基本面指标计算

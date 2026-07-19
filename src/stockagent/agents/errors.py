@@ -7,6 +7,10 @@ class AgentError(StockAgentError):
     """Base class for agent orchestration failures."""
 
 
+class AgentOutputError(AgentError):
+    """An agent result is missing or violates its output contract."""
+
+
 class LLMError(AgentError):
     """Base class for language-model call failures."""
 

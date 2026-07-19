@@ -4,7 +4,12 @@ import unittest
 from unittest.mock import patch
 
 from stockagent.agents import run_stock_analysis_agent
-from stockagent.agents.errors import LLMResponseError, LLMTimeoutError
+from stockagent.agents.errors import (
+    AgentError,
+    AgentOutputError,
+    LLMResponseError,
+    LLMTimeoutError,
+)
 from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
 from stockagent.errors import ConfigurationError
 from stockagent.llm import (
@@ -14,15 +19,20 @@ from stockagent.llm import (
 )
 
 
-class FakeAgent:
+class FakeGraph:
     def __init__(self, exc: Exception) -> None:
         self.exc = exc
+        self.initial_state: dict | None = None
 
-    def invoke(self, _payload: dict, config: dict | None = None) -> dict:
+    def invoke(self, initial_state: dict) -> dict:
+        self.initial_state = initial_state
         raise self.exc
 
 
 class AgentErrorsTest(unittest.TestCase):
+    def test_agent_output_error_is_an_agent_error(self) -> None:
+        self.assertTrue(issubclass(AgentOutputError, AgentError))
+
     def test_native_openai_base_url_detection(self) -> None:
         self.assertTrue(_is_native_openai_base_url(None))
         self.assertTrue(_is_native_openai_base_url(""))
@@ -84,9 +94,13 @@ class AgentErrorsTest(unittest.TestCase):
             model=DEFAULT_LLM_MODEL,
         )
 
-        with patch(
-            "stockagent.agents.orchestrator.create_stock_analysis_agent",
-            return_value=FakeAgent(TimeoutError("request timed out")),
+        with (
+            patch("stockagent.agents.orchestrator.build_model", return_value="model"),
+            patch("stockagent.agents.orchestrator.build_analysis_nodes", return_value="nodes"),
+            patch(
+                "stockagent.agents.orchestrator.build_analysis_graph",
+                return_value=FakeGraph(TimeoutError("request timed out")),
+            ),
         ):
             with self.assertRaises(LLMTimeoutError) as context:
                 run_stock_analysis_agent("NVDA", 3, llm_config)
@@ -100,9 +114,13 @@ class AgentErrorsTest(unittest.TestCase):
             model=DEFAULT_LLM_MODEL,
         )
 
-        with patch(
-            "stockagent.agents.orchestrator.create_stock_analysis_agent",
-            return_value=FakeAgent(RuntimeError("bad response")),
+        with (
+            patch("stockagent.agents.orchestrator.build_model", return_value="model"),
+            patch("stockagent.agents.orchestrator.build_analysis_nodes", return_value="nodes"),
+            patch(
+                "stockagent.agents.orchestrator.build_analysis_graph",
+                return_value=FakeGraph(RuntimeError("bad response")),
+            ),
         ):
             with self.assertRaises(LLMResponseError):
                 run_stock_analysis_agent("NVDA", 3, llm_config)
