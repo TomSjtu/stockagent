@@ -1,6 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
+from typing import Literal
+
+from pydantic import BaseModel
+
+
+class SecFilingReference(BaseModel):
+    """Metadata needed to link annual financial data to its SEC filing."""
+
+    form: Literal["10-K", "10-K/A"]
+    fiscal_year: int
+    period_end: date
+    filed_at: date
+    cik: str
+    accession_number: str
+    primary_document: str
+    url: str
 
 
 @dataclass(slots=True)
@@ -36,6 +53,8 @@ class FinancialRecord:
     operating_cash_flow: float | None = None
     capex: float | None = None
     dividends_paid: float | None = None
+
+    filing: SecFilingReference | None = None
 
 
 @dataclass(slots=True)

@@ -20,7 +20,7 @@ class AnalysisGraphTest(unittest.TestCase):
             return {
                 "industry": IndustryOutput(
                     narrative=f"{state['ticker']} industry",
-                    sources=["https://example.test/industry"],
+                    evidence=[],
                 )
             }
 
@@ -45,7 +45,6 @@ class AnalysisGraphTest(unittest.TestCase):
                     pe_ratio=20.0,
                     pb_ratio=3.0,
                     ps_ratio=5.0,
-                    price_source="https://example.test/price",
                 )
             }
 
@@ -56,7 +55,7 @@ class AnalysisGraphTest(unittest.TestCase):
                     narrative=state["valuation"].narrative,
                     overall_rating="中",
                     key_risks=["competition"],
-                    sources=[],
+                    evidence=[],
                 )
             }
 
@@ -113,7 +112,7 @@ class AnalysisGraphTest(unittest.TestCase):
             return {
                 "industry": IndustryOutput(
                     narrative="industry",
-                    sources=[],
+                    evidence=[],
                 )
             }
 
@@ -134,7 +133,6 @@ class AnalysisGraphTest(unittest.TestCase):
                     pe_ratio=None,
                     pb_ratio=None,
                     ps_ratio=None,
-                    price_source=None,
                 )
             }
 
@@ -144,7 +142,7 @@ class AnalysisGraphTest(unittest.TestCase):
                     narrative="risk",
                     overall_rating="低",
                     key_risks=[],
-                    sources=[],
+                    evidence=[],
                 )
             }
 

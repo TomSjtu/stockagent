@@ -11,6 +11,7 @@ from stockagent.agents.orchestrator import build_analysis_nodes
 from stockagent.agents.state import (
     FundamentalsOutput,
     IndustryOutput,
+    MarketInputs,
     RiskOutput,
     ValuationOutput,
 )
@@ -79,7 +80,7 @@ class AnalysisNodesTest(unittest.TestCase):
         return nodes, agents, model
 
     def test_industry_node_returns_local_typed_update(self) -> None:
-        output = IndustryOutput(narrative="Industry", sources=["https://example.test"])
+        output = IndustryOutput(narrative="Industry", evidence=[])
         nodes, agents, _model = self._build_nodes(
             industry_result={"messages": [], "structured_response": output},
             fundamentals_result={},
@@ -117,7 +118,7 @@ class AnalysisNodesTest(unittest.TestCase):
                         tool_call_id="tool-1",
                     )
                 ],
-                "structured_response": IndustryOutput(narrative="ignored", sources=[]),
+                "structured_response": IndustryOutput(narrative="ignored", evidence=[]),
             },
             fundamentals_result={},
             valuation_result={},
@@ -144,7 +145,8 @@ class AnalysisNodesTest(unittest.TestCase):
             pe_ratio=1.0,
             pb_ratio=2.0,
             ps_ratio=3.0,
-            price_source="https://example.test/price",
+            evidence=[],
+            market_inputs=MarketInputs(),
         )
         valuation_payload = json.dumps(
             {
@@ -175,7 +177,7 @@ class AnalysisNodesTest(unittest.TestCase):
         state = {
             "ticker": "aapl",
             "years": 3,
-            "industry": IndustryOutput(narrative="industry", sources=[]),
+            "industry": IndustryOutput(narrative="industry", evidence=[]),
             "fundamentals": FundamentalsOutput(
                 narrative="fundamentals",
                 key_metrics={},
@@ -196,12 +198,13 @@ class AnalysisNodesTest(unittest.TestCase):
             pe_ratio=None,
             pb_ratio=None,
             ps_ratio=None,
-            price_source=None,
+            evidence=[],
+            market_inputs=MarketInputs(),
         )
         state = {
             "ticker": "AAPL",
             "years": 3,
-            "industry": IndustryOutput(narrative="industry", sources=[]),
+            "industry": IndustryOutput(narrative="industry", evidence=[]),
             "fundamentals": FundamentalsOutput(
                 narrative="fundamentals",
                 key_metrics={},
@@ -271,7 +274,7 @@ class AnalysisNodesTest(unittest.TestCase):
         state = {
             "ticker": "AAPL",
             "years": 3,
-            "industry": IndustryOutput(narrative="industry", sources=[]),
+            "industry": IndustryOutput(narrative="industry", evidence=[]),
             "fundamentals": FundamentalsOutput(
                 narrative="fundamentals",
                 key_metrics={"revenue_growth": 0.1},
@@ -282,13 +285,14 @@ class AnalysisNodesTest(unittest.TestCase):
                 pe_ratio=30.0,
                 pb_ratio=45.0,
                 ps_ratio=8.0,
-                price_source="https://example.test/price",
+                evidence=[],
+                market_inputs=MarketInputs(),
             ),
             "risk": RiskOutput(
                 narrative="risk",
                 overall_rating="中",
                 key_risks=["competition"],
-                sources=[],
+                evidence=[],
             ),
         }
 

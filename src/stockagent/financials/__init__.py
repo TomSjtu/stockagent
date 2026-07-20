@@ -4,6 +4,7 @@ from stockagent.financials.models import (
     FinancialRecord,
     GrowthMetrics,
     ProfitabilityMetrics,
+    SecFilingReference,
     ValuationMetrics,
 )
 
@@ -13,5 +14,6 @@ __all__ = [
     "FinancialRecord",
     "GrowthMetrics",
     "ProfitabilityMetrics",
+    "SecFilingReference",
     "ValuationMetrics",
 ]
