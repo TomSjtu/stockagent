@@ -1,14 +1,42 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
 
+from stockagent.report.evidence import EvidenceBundle
+from stockagent.report.writer import write_report_artifacts
 from stockagent.report.writer import write_markdown_report
 
 
 class ReportWriterTest(unittest.TestCase):
+    def test_write_report_artifacts_writes_markdown_and_sources_with_same_stem(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "output"
+
+            artifacts = write_report_artifacts(
+                "aapl",
+                "# Report\n",
+                evidence_bundle=EvidenceBundle(),
+                output_dir=output_dir,
+                report_date=date(2026, 6, 21),
+            )
+
+            self.assertEqual(artifacts.markdown_path.name, "AAPL-2026-06-21.md")
+            self.assertEqual(
+                artifacts.sources_path.name,
+                "AAPL-2026-06-21.sources.json",
+            )
+            self.assertEqual(artifacts.markdown_path.read_text(encoding="utf-8"), "# Report\n")
+            payload = json.loads(artifacts.sources_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["ticker"], "AAPL")
+            self.assertEqual(payload["report_date"], "2026-06-21")
+            self.assertEqual(payload["evidence"], [])
+
     def test_write_markdown_report_creates_output_dir_and_uses_ticker_date_name(
         self,
     ) -> None:
