@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import date
 from unittest.mock import patch
 
 from stockagent import tools
+from stockagent.api import AnalysisResult
 from stockagent.data.errors import MissingFiscalYearsError
 from stockagent.financials import (
     FinancialRecord,
     ProfitabilityMetrics,
+    SecFilingReference,
     ValuationMetrics,
 )
 from stockagent.tools import (
@@ -194,6 +197,41 @@ class FinancialToolsTest(unittest.TestCase):
             payload["unavailable"]["ps_ratio"],
             "missing positive market_cap/revenue",
         )
+
+    def test_get_fundamentals_analysis_serializes_record_filings(self) -> None:
+        filing = SecFilingReference(
+            form="10-K",
+            fiscal_year=2024,
+            period_end=date(2024, 12, 31),
+            filed_at=date(2025, 2, 20),
+            cik="123456",
+            accession_number="0000123456-25-000001",
+            primary_document="annual-report.htm",
+            url="https://www.sec.gov/Archives/example/annual-report.htm",
+        )
+        result = AnalysisResult(
+            ticker="AAPL",
+            records=[
+                FinancialRecord(
+                    ticker="AAPL",
+                    company_name="Apple Inc.",
+                    fiscal_year=2024,
+                    filing=filing,
+                )
+            ],
+            profitability={},
+            cash_flow={},
+            financial_health={},
+            growth={},
+        )
+
+        with patch("stockagent.tools.financials.api.analyze", return_value=result):
+            payload = json.loads(get_fundamentals_analysis("aapl", 1))
+
+        serialized_filing = payload["records"][0]["filing"]
+        self.assertEqual(serialized_filing["fiscal_year"], 2024)
+        self.assertEqual(serialized_filing["period_end"], "2024-12-31")
+        self.assertEqual(serialized_filing["filed_at"], "2025-02-20")
 
 
 if __name__ == "__main__":

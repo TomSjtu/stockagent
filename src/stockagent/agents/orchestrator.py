@@ -26,6 +26,7 @@ from stockagent.agents.subagent_progress import AgentProgressCallbackHandler
 from stockagent.agents.valuation_agent import build_valuation_agent
 from stockagent.config import LLMConfig
 from stockagent.errors import StockAgentError
+from stockagent.financials import SecFilingReference
 from stockagent.llm import build_model
 from stockagent.observability import get_logger
 
@@ -88,7 +89,7 @@ def _build_industry_node(agent: Any) -> StateNode:
 
 def _build_fundamentals_node(agent: Any) -> StateNode:
     def fundamentals(state: AnalysisState) -> dict[str, FundamentalsOutput]:
-        output, _messages = _invoke_structured_agent(
+        output, messages = _invoke_structured_agent(
             agent,
             agent_name="fundamentals_analyst",
             payload=_agent_payload(
@@ -98,7 +99,13 @@ def _build_fundamentals_node(agent: Any) -> StateNode:
             ),
             output_type=FundamentalsOutput,
         )
-        return {"fundamentals": output}
+        return {
+            "fundamentals": _apply_deterministic_fundamentals_filings(
+                output,
+                messages,
+                ticker=state["ticker"],
+            )
+        }
 
     return fundamentals
 
@@ -160,6 +167,11 @@ def _build_synthesize_node(model: BaseChatModel) -> StateNode:
                         "报告必须包含：摘要、行业分析、基本面分析、估值分析、"
                         "风险评估、投资建议；必须使用给定的 PE/PB/PS，不得自行重新计算；"
                         "必须说明数据限制并包含“非投资建议”免责声明。\n\n"
+                        "引用与数据口径规则：必须保留上游正文已有的内部证据标记，例如 "
+                        "[industry-1]、[valuation-1]、[risk-1] 和 [sec-2024]，不得自行"
+                        "发明或改写 URL、标题或证据 ID。涉及年度财务数据的段落或表格行使用对应"
+                        "财年的 [sec-<财年>] 标记。报告的“数据口径”必须明确写出："
+                        "财务数据仅覆盖最近可得年度 10-K，未纳入最新 10-Q 与 TTM。\n\n"
                         f"行业分析：\n{state['industry'].model_dump_json(indent=2)}\n\n"
                         f"基本面分析：\n{state['fundamentals'].model_dump_json(indent=2)}\n\n"
                         f"估值分析：\n{state['valuation'].model_dump_json(indent=2)}\n\n"
@@ -277,15 +289,98 @@ def _apply_deterministic_valuation_metrics(
     if any(metric_name not in valuation for metric_name in metric_names):
         raise AgentOutputError("compute_valuation_metrics omitted a valuation metric")
 
+    tool_market_inputs = payload.get("market_inputs")
+    if not isinstance(tool_market_inputs, Mapping):
+        raise AgentOutputError("compute_valuation_metrics returned invalid market inputs")
+    market_input_names = ("price", "market_cap")
+    if any(input_name not in tool_market_inputs for input_name in market_input_names):
+        raise AgentOutputError("compute_valuation_metrics omitted a market input")
+
+    evidence_id = output.market_inputs.evidence_id
+    if evidence_id is not None and evidence_id not in {
+        evidence.id for evidence in output.evidence
+    }:
+        raise AgentOutputError("valuation_analyst returned an unknown market evidence ID")
+
     try:
         return ValuationOutput.model_validate(
             {
                 **output.model_dump(),
                 **{metric_name: valuation[metric_name] for metric_name in metric_names},
+                "market_inputs": {
+                    **output.market_inputs.model_dump(),
+                    **{
+                        input_name: tool_market_inputs[input_name]
+                        for input_name in market_input_names
+                    },
+                },
             }
         )
     except ValidationError as exc:
         raise AgentOutputError("compute_valuation_metrics returned invalid metrics") from exc
+
+
+def _apply_deterministic_fundamentals_filings(
+    output: FundamentalsOutput,
+    messages: list[Any],
+    *,
+    ticker: str,
+) -> FundamentalsOutput:
+    tool_message = next(
+        (
+            message
+            for message in reversed(messages)
+            if isinstance(message, ToolMessage)
+            and message.name == "get_fundamentals_analysis"
+            and message.status == "success"
+        ),
+        None,
+    )
+    if tool_message is None:
+        raise AgentOutputError("fundamentals_analyst did not call get_fundamentals_analysis")
+    if not isinstance(tool_message.content, str):
+        raise AgentOutputError("get_fundamentals_analysis returned non-text JSON")
+
+    try:
+        payload = json.loads(tool_message.content)
+    except json.JSONDecodeError as exc:
+        raise AgentOutputError("get_fundamentals_analysis returned invalid JSON") from exc
+
+    if not isinstance(payload, Mapping):
+        raise AgentOutputError("get_fundamentals_analysis returned a non-object payload")
+    if payload.get("ticker") != ticker.upper():
+        raise AgentOutputError("get_fundamentals_analysis returned a mismatched ticker")
+
+    records = payload.get("records")
+    if not isinstance(records, list):
+        raise AgentOutputError("get_fundamentals_analysis returned invalid records")
+
+    financial_filings: list[SecFilingReference] = []
+    for record in records:
+        if not isinstance(record, Mapping):
+            raise AgentOutputError("get_fundamentals_analysis returned invalid record")
+
+        filing_payload = record.get("filing")
+        if filing_payload is None:
+            continue
+        if not isinstance(filing_payload, Mapping):
+            raise AgentOutputError("get_fundamentals_analysis returned invalid filing")
+
+        try:
+            filing = SecFilingReference.model_validate(filing_payload)
+        except ValidationError as exc:
+            raise AgentOutputError("get_fundamentals_analysis returned invalid filing") from exc
+
+        if record.get("fiscal_year") != filing.fiscal_year:
+            raise AgentOutputError("get_fundamentals_analysis returned mismatched filing")
+        financial_filings.append(filing)
+
+    return FundamentalsOutput.model_validate(
+        {
+            **output.model_dump(),
+            "financial_filings": financial_filings,
+        }
+    )
 
 
 def _extract_markdown(response: object) -> str:
