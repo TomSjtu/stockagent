@@ -163,7 +163,14 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(AnalysisState.__required_keys__, {"ticker", "years"})
         self.assertEqual(
             AnalysisState.__optional_keys__,
-            {"industry", "fundamentals", "valuation", "risk", "final_report"},
+            {
+                "industry",
+                "fundamentals",
+                "valuation",
+                "risk",
+                "final_report",
+                "cited_evidence_ids",
+            },
         )
 
 

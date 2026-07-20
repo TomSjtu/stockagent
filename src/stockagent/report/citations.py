@@ -57,6 +57,9 @@ def render_citations(
 
 
 def _format_reference(evidence: Evidence) -> str:
+    if evidence.kind == "sec_filing":
+        return "｜".join([evidence.title, evidence.url])
+
     publisher = evidence.publisher or urlparse(evidence.url).netloc
     parts = [publisher, evidence.title]
     if evidence.published_date is not None:

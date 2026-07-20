@@ -97,6 +97,29 @@ class CitationRendererTest(unittest.TestCase):
         self.assertEqual(result.cited_evidence_ids, ["market-data"])
         self.assertIn("外部事实[^1]。", result.markdown)
 
+    def test_render_citations_formats_sec_filing_without_duplicate_filed_date(self) -> None:
+        result = render_citations(
+            "年度财务数据[sec-2024]。",
+            [
+                Evidence(
+                    id="sec-2024",
+                    kind="sec_filing",
+                    title="SEC 10-K｜截至 2024-12-31｜Filed 2025-02-20",
+                    url="https://www.sec.gov/Archives/example.htm",
+                    publisher="SEC",
+                    published_date=date(2025, 2, 20),
+                    source_agent="fundamentals_analyst",
+                )
+            ],
+        )
+
+        self.assertIn(
+            "[^1]: SEC 10-K｜截至 2024-12-31｜Filed 2025-02-20｜"
+            "https://www.sec.gov/Archives/example.htm",
+            result.markdown,
+        )
+        self.assertNotIn("Filed 2025-02-20｜2025-02-20", result.markdown)
+
     def test_render_citations_preserves_regular_markdown_links(self) -> None:
         markdown = "查看[来源网站](https://example.test)。"
 

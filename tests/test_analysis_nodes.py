@@ -530,7 +530,13 @@ class AnalysisNodesTest(unittest.TestCase):
 
         result = nodes.synthesize(state)
 
-        self.assertEqual(result, {"final_report": "# Report\n\nNot investment advice."})
+        self.assertEqual(
+            result,
+            {
+                "final_report": "# Report\n\nNot investment advice.",
+                "cited_evidence_ids": [],
+            },
+        )
         self.assertIn("30.0", model.payload[0]["content"])
         self.assertIn("不得自行重新计算", model.payload[0]["content"])
         self.assertIn("保留", model.payload[0]["content"])
@@ -539,6 +545,63 @@ class AnalysisNodesTest(unittest.TestCase):
         self.assertIn(
             "财务数据仅覆盖最近可得年度 10-K，未纳入最新 10-Q 与 TTM",
             model.payload[0]["content"],
+        )
+
+    def test_synthesize_node_renders_citations_and_records_cited_evidence(self) -> None:
+        nodes, _agents, _model = self._build_nodes(
+            industry_result={},
+            fundamentals_result={},
+            valuation_result={},
+            risk_result={},
+            synthesize_result=AIMessage(content="行业事实[industry-1]。"),
+        )
+        state = {
+            "ticker": "AAPL",
+            "years": 3,
+            "industry": IndustryOutput(
+                narrative="industry",
+                evidence=[
+                    Evidence(
+                        id="industry-1",
+                        kind="web",
+                        title="Industry source",
+                        url="https://example.test/industry",
+                        publisher="Example News",
+                        source_agent="industry_analyst",
+                    )
+                ],
+            ),
+            "fundamentals": FundamentalsOutput(
+                narrative="fundamentals",
+                key_metrics={},
+                concerns=[],
+            ),
+            "valuation": ValuationOutput(
+                narrative="valuation",
+                pe_ratio=None,
+                pb_ratio=None,
+                ps_ratio=None,
+            ),
+            "risk": RiskOutput(
+                narrative="risk",
+                overall_rating="低",
+                key_risks=[],
+                evidence=[],
+            ),
+        }
+
+        result = nodes.synthesize(state)
+
+        self.assertEqual(
+            result,
+            {
+                "final_report": (
+                    "行业事实[^1]。\n\n## 参考来源\n\n"
+                    "[^1]: Example News｜Industry source｜"
+                    "https://example.test/industry\n"
+                ),
+                "cited_evidence_ids": ["industry-1"],
+            },
         )
 
 

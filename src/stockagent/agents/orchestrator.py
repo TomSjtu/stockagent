@@ -17,6 +17,7 @@ from stockagent.agents.industry_agent import build_industry_agent
 from stockagent.agents.risk_agent import build_risk_agent
 from stockagent.agents.state import (
     AnalysisState,
+    Evidence,
     FundamentalsOutput,
     IndustryOutput,
     RiskOutput,
@@ -29,6 +30,8 @@ from stockagent.errors import StockAgentError
 from stockagent.financials import SecFilingReference
 from stockagent.llm import build_model
 from stockagent.observability import get_logger
+from stockagent.report.citations import render_citations
+from stockagent.report.evidence import EvidenceBundle
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,12 @@ class AnalysisNodes:
     valuation: StateNode
     risk: StateNode
     synthesize: StateNode
+
+
+@dataclass(frozen=True)
+class GeneratedReport:
+    markdown: str
+    evidence_bundle: EvidenceBundle
 
 
 StructuredOutputT = TypeVar("StructuredOutputT", bound=BaseModel)
@@ -155,7 +164,7 @@ def _build_risk_node(agent: Any) -> StateNode:
 
 
 def _build_synthesize_node(model: BaseChatModel) -> StateNode:
-    def synthesize(state: AnalysisState) -> dict[str, str]:
+    def synthesize(state: AnalysisState) -> dict[str, object]:
         logger = get_logger(__name__)
         logger.info("主 agent 开始汇总最终报告")
         response = model.invoke(
@@ -181,8 +190,15 @@ def _build_synthesize_node(model: BaseChatModel) -> StateNode:
             ]
         )
         report = _extract_markdown(response)
+        citation_result = render_citations(
+            report,
+            _build_evidence_bundle(state, cited_evidence_ids=[]).evidence,
+        )
         logger.info("主 agent 完成汇总最终报告")
-        return {"final_report": report}
+        return {
+            "final_report": citation_result.markdown,
+            "cited_evidence_ids": citation_result.cited_evidence_ids,
+        }
 
     return synthesize
 
@@ -405,7 +421,7 @@ def run_stock_analysis_agent(
     ticker: str,
     years: int,
     llm_config: LLMConfig,
-) -> str:
+) -> GeneratedReport:
     model = build_model(llm_config)
     graph = build_analysis_graph(build_analysis_nodes(model))
     try:
@@ -420,4 +436,68 @@ def run_stock_analysis_agent(
     report = result.get("final_report")
     if not isinstance(report, str) or not report.strip():
         raise AgentOutputError("analysis graph result is missing final_report")
-    return report
+    return GeneratedReport(
+        markdown=report,
+        evidence_bundle=_build_evidence_bundle(
+            result,
+            cited_evidence_ids=_extract_cited_evidence_ids(result),
+        ),
+    )
+
+
+def _build_evidence_bundle(
+    state: Mapping[str, object],
+    *,
+    cited_evidence_ids: list[str],
+) -> EvidenceBundle:
+    industry = _state_output(state, "industry", IndustryOutput)
+    fundamentals = _state_output(state, "fundamentals", FundamentalsOutput)
+    valuation = _state_output(state, "valuation", ValuationOutput)
+    risk = _state_output(state, "risk", RiskOutput)
+    evidence = [
+        *industry.evidence,
+        *valuation.evidence,
+        *risk.evidence,
+        *[_filing_evidence(filing) for filing in fundamentals.financial_filings],
+    ]
+    return EvidenceBundle(
+        evidence=evidence,
+        cited_evidence_ids=cited_evidence_ids,
+        market_inputs=valuation.market_inputs,
+        financial_filings=fundamentals.financial_filings,
+    )
+
+
+def _state_output(
+    state: Mapping[str, object],
+    name: str,
+    output_type: type[StructuredOutputT],
+) -> StructuredOutputT:
+    output = state.get(name)
+    if not isinstance(output, output_type):
+        raise AgentOutputError(f"analysis graph result is missing {name}")
+    return output
+
+
+def _extract_cited_evidence_ids(state: Mapping[str, object]) -> list[str]:
+    evidence_ids = state.get("cited_evidence_ids")
+    if not isinstance(evidence_ids, list) or not all(
+        isinstance(evidence_id, str) for evidence_id in evidence_ids
+    ):
+        raise AgentOutputError("analysis graph result is missing cited_evidence_ids")
+    return evidence_ids
+
+
+def _filing_evidence(filing: SecFilingReference) -> Evidence:
+    return Evidence(
+        id=f"sec-{filing.fiscal_year}",
+        kind="sec_filing",
+        title=(
+            f"SEC {filing.form}｜截至 {filing.period_end.isoformat()}｜"
+            f"Filed {filing.filed_at.isoformat()}"
+        ),
+        url=filing.url,
+        publisher="SEC",
+        published_date=filing.filed_at,
+        source_agent="fundamentals_analyst",
+    )

@@ -75,3 +75,4 @@ class AnalysisState(TypedDict):
     valuation: NotRequired[ValuationOutput]
     risk: NotRequired[RiskOutput]
     final_report: NotRequired[str]
+    cited_evidence_ids: NotRequired[list[str]]
