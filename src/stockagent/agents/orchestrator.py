@@ -24,7 +24,7 @@ from stockagent.agents.state import (
 )
 from stockagent.agents.subagent_progress import AgentProgressCallbackHandler
 from stockagent.agents.valuation_agent import build_valuation_agent
-from stockagent.config import LLMConfig, apply_llm_environment
+from stockagent.config import LLMConfig
 from stockagent.errors import StockAgentError
 from stockagent.llm import build_model
 from stockagent.observability import get_logger
@@ -311,7 +311,6 @@ def run_stock_analysis_agent(
     years: int,
     llm_config: LLMConfig,
 ) -> str:
-    apply_llm_environment(llm_config)
     model = build_model(llm_config)
     graph = build_analysis_graph(build_analysis_nodes(model))
     try:

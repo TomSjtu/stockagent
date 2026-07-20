@@ -58,9 +58,9 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 ### 2.2 运行时主流程
 
 1. `stockagent.cli:main()` 解析参数，设置日志，并将预期异常转换为命令行错误。
-2. `app.run_stock_analysis()` 调用 `load_llm_config()`；配置层读取 `.env`，要求 LLM 和 Tavily 两类凭据都存在。
+2. `app.run_stock_analysis()` 调用 `load_llm_config()`；配置层读取 `.env` 并要求 LLM 凭据，应用层随后校验 Tavily 凭据。
 3. 应用层调用 `agents.run_stock_analysis_agent()`；包级入口延迟导入真正的 orchestrator，避免普通模块导入时初始化重型依赖。
-4. orchestrator 设置 OpenAI 环境变量、创建 `ChatOpenAI`，将四个 Agent builder 和汇总节点组装为 `AnalysisNodes`。
+4. orchestrator 通过 `LLMConfig` 显式参数创建 `ChatOpenAI`，将四个 Agent builder 和汇总节点组装为 `AnalysisNodes`。
 5. `StateGraph` 以只有 `ticker`、`years` 的初始 State 启动。行业与基本面节点是两个起始分支；估值节点通过联合入边等待它们都返回。
 6. 行业、估值和风险 Agent 通过 `web_search()` 调用 Tavily；基本面和估值工具通过 `api.py` 读取 EDGAR 数据。
 7. 每个分析节点只把经 Pydantic 验证的局部输出写回 `AnalysisState`，不会把 LangChain 的完整 messages 放入主 State。

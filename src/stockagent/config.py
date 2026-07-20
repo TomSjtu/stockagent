@@ -39,25 +39,8 @@ def load_llm_config() -> LLMConfig:
             "LLM_API_KEY is required for agent reports. "
             "Set it in .env before running the default CLI analysis."
         )
-    tavily_api_key = os.getenv("TAVILY_API_KEY")
-    if not tavily_api_key:
-        raise ConfigurationError(
-            "TAVILY_API_KEY is required for agent reports. "
-            "Set it in .env before running the default CLI analysis."
-        )
-
     return LLMConfig(
         api_key=api_key,
         base_url=os.getenv("LLM_BASE_URL", ""),
         model=os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL),
     )
-
-
-def apply_llm_environment(config: LLMConfig) -> None:
-    provider, _, _model_name = config.model.partition(":")
-    provider = provider.lower()
-
-    if provider == "openai":
-        os.environ.setdefault("OPENAI_API_KEY", config.api_key)
-        if config.base_url:
-            os.environ.setdefault("OPENAI_BASE_URL", config.base_url)

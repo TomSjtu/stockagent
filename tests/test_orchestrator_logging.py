@@ -30,7 +30,6 @@ class OrchestratorRunnerTest(unittest.TestCase):
         graph = FakeGraph({"final_report": "# Final Report\n"})
 
         with (
-            patch("stockagent.agents.orchestrator.apply_llm_environment") as apply_env,
             patch("stockagent.agents.orchestrator.build_model", return_value="model") as build_model,
             patch("stockagent.agents.orchestrator.build_analysis_nodes", return_value="nodes") as build_nodes,
             patch("stockagent.agents.orchestrator.build_analysis_graph", return_value=graph) as build_graph,
@@ -38,7 +37,6 @@ class OrchestratorRunnerTest(unittest.TestCase):
             report = run_stock_analysis_agent("nvda", 3, self.llm_config)
 
         self.assertEqual(report, "# Final Report\n")
-        apply_env.assert_called_once_with(self.llm_config)
         build_model.assert_called_once_with(self.llm_config)
         build_nodes.assert_called_once_with("model")
         build_graph.assert_called_once_with("nodes")

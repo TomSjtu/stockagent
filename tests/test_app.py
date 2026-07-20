@@ -6,14 +6,28 @@ from unittest.mock import patch
 
 from stockagent.app import run_stock_analysis
 from stockagent.config import RuntimeOptions
+from stockagent.errors import ConfigurationError
 
 
 class RunStockAnalysisTest(unittest.TestCase):
+    def test_run_stock_analysis_requires_tavily_api_key(self) -> None:
+        options = RuntimeOptions(ticker="fake", years=2)
+
+        with (
+            patch("stockagent.app.load_llm_config", return_value="llm-config"),
+            patch.dict("stockagent.app.os.environ", {"TAVILY_API_KEY": ""}),
+            self.assertRaisesRegex(ConfigurationError, "TAVILY_API_KEY"),
+        ):
+            run_stock_analysis(options)
+
     def test_run_stock_analysis_uses_agent_report_path(self) -> None:
         options = RuntimeOptions(ticker="fake", years=2)
 
         with (
             patch("stockagent.app.load_llm_config", return_value="llm-config"),
+            patch.dict(
+                "stockagent.app.os.environ", {"TAVILY_API_KEY": "tavily-key"}
+            ),
             patch(
                 "stockagent.agents.orchestrator.run_stock_analysis_agent",
                 return_value="# Agent Report\n",
@@ -38,6 +52,9 @@ class RunStockAnalysisTest(unittest.TestCase):
 
         with (
             patch("stockagent.app.load_llm_config", return_value="llm-config"),
+            patch.dict(
+                "stockagent.app.os.environ", {"TAVILY_API_KEY": "tavily-key"}
+            ),
             patch(
                 "stockagent.agents.orchestrator.run_stock_analysis_agent",
                 return_value="# Agent Report\n",
