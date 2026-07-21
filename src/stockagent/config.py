@@ -32,6 +32,18 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class AppConfig:
+    """External service settings required for one stock-analysis run."""
+
+    # 报告 Agent 使用的 LLM 连接配置
+    llm: LLMConfig
+    # Tavily 网页搜索服务的 API 密钥
+    tavily_api_key: str
+    # EDGAR 请求使用的客户端身份字符串
+    edgar_identity: str = DEFAULT_EDGAR_IDENTITY
+
+
+@dataclass(frozen=True)
 class CLIOptions:
     """Validated command-line arguments for one analysis run."""
 
@@ -58,4 +70,20 @@ def load_llm_config() -> LLMConfig:
         api_key=api_key,
         base_url=os.getenv("LLM_BASE_URL", ""),
         model=os.getenv("LLM_MODEL", DEFAULT_LLM_MODEL),
+    )
+
+
+def load_app_config() -> AppConfig:
+    """Load all external service settings for a stock-analysis run."""
+    llm_config = load_llm_config()
+    tavily_api_key = os.getenv("TAVILY_API_KEY")
+    if not tavily_api_key:
+        raise ConfigurationError(
+            "TAVILY_API_KEY is required for agent reports. "
+            "Set it in .env before running an analysis."
+        )
+    return AppConfig(
+        llm=llm_config,
+        tavily_api_key=tavily_api_key,
+        edgar_identity=os.getenv("EDGAR_IDENTITY", DEFAULT_EDGAR_IDENTITY),
     )

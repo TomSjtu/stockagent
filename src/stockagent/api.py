@@ -4,7 +4,6 @@ from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import Protocol, TypeVar
 
-from stockagent.config import DEFAULT_EDGAR_IDENTITY
 from stockagent.data.errors import MissingFiscalYearsError, NoDataError
 from stockagent.financials import (
     CashFlowMetrics,
@@ -71,12 +70,7 @@ def _fetch_financials_cached(
     years: int = 3,
 ) -> tuple[FinancialRecord, ...]:
     """Fetch one normalized ticker window through the process-local provider cache."""
-    from edgar import set_identity
-
     from stockagent.data.providers import EdgarFinancialsProvider
-
-    # 在创建 EDGAR provider 前，将配置中的身份字符串传给 edgar 库
-    set_identity(DEFAULT_EDGAR_IDENTITY)
 
     provider = EdgarFinancialsProvider()
     records = provider.fetch_annual_records(normalized_ticker, years=years)

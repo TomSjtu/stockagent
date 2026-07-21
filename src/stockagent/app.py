@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import os
 from datetime import date
 from typing import TYPE_CHECKING
 
-from stockagent.config import CLIOptions, load_llm_config
-from stockagent.errors import ConfigurationError
+from stockagent.config import CLIOptions, load_app_config
 from stockagent.observability import get_logger
 
 if TYPE_CHECKING:
@@ -17,23 +15,21 @@ def run_stock_analysis(options: CLIOptions) -> ReportArtifacts:
 
     Raises ConfigurationError when a required external-service credential is absent.
     """
+    logger = get_logger(__name__)
+    config = load_app_config()
+    from edgar import set_identity  # type: ignore[import-untyped]
+
     from stockagent.agents import run_stock_analysis_agent
     from stockagent.report.writer import write_report_artifacts
 
-    logger = get_logger(__name__)
-    llm_config = load_llm_config()
-    if not os.getenv("TAVILY_API_KEY"):
-        raise ConfigurationError(
-            "TAVILY_API_KEY is required for agent reports. "
-            "Set it in .env before running an analysis."
-        )
+    set_identity(config.edgar_identity)
     logger.info("加载 LLM 配置完成")
     logger.info("启动主分析 agent")
     # 调用 Agent 图，取得渲染后的 Markdown 和其 EvidenceBundle
     report = run_stock_analysis_agent(
         options.ticker,
         options.years,
-        llm_config,
+        config.llm,
     )
     logger.info("主分析 agent 完成")
     logger.info("开始写入报告")
