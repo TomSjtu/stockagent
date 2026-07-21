@@ -1,6 +1,6 @@
 # stockagent
 
-`stockagent` 是一个面向美股的命令行股票分析工具。当前默认流程使用 LangGraph 显式编排多个分析 Agent，结合 SEC EDGAR 财务数据、Tavily 搜索结果和 LLM，生成中文 Markdown 股票研究报告。
+`stockagent` 是一个面向美股的命令行股票分析工具。当前默认流程使用 LangGraph 显式编排多个分析 Agent，结合 SEC EDGAR 财务数据、Tavily 搜索结果和 LLM，生成带可追溯来源的中文 Markdown 股票研究报告。
 
 > 生成内容仅用于研究和学习，不构成投资建议。
 
@@ -11,7 +11,8 @@
 - 基于最新财年数据和外部市场输入，确定性计算 trailing PE / PB / PS。
 - 通过 LangGraph DAG 编排行、基本面、估值、风险四类分析 Agent。
 - 使用 Tavily 补充行业趋势、公司动态和市场信息。
-- 输出中文 Markdown 报告，并在 CLI 运行过程中打印关键阶段日志。
+- 为实际采用的网页信息生成 Markdown 脚注，并为年度财务数据关联具体 SEC 年度 filing 主文档。
+- 输出同名 Markdown 报告和 `sources.json` 审计附属文件，并在 CLI 运行过程中打印关键阶段日志。
 
 ## 环境要求
 
@@ -80,16 +81,16 @@ uv run stock AAPL --years 5 --output-dir output --log-level info
 - `--output-dir`：报告输出目录，默认是当前目录下的 `output/`。
 - `--log-level`：日志级别，可选 `debug`、`info`、`warning`、`error`，默认 `info`。
 
-报告文件名格式：
+每次运行会生成两个同 stem 的文件：
 
 ```text
 output/AAPL-YYYY-MM-DD.md
+output/AAPL-YYYY-MM-DD.sources.json
 ```
 
-补充说明：
+Markdown 中实际引用的网页和 SEC filing 会在文末“参考来源”中按首次出现顺序生成全局脚注；同一来源在多处使用时只保留一个脚注。`sources.json` 则保存本次运行全部选取的证据、实际引用 ID、用于估值计算的价格/市值输入及年度 10-K filing 元数据。它不归档原始网页全文。
 
-- 当前 CLI 默认只暴露 Agent 报告路径。
-- 报告文件会写入 `output/`，写入路径通过日志输出。
+同一 ticker 在同一天重复运行会覆盖该日期的两份产物。CLI 通过日志输出生成路径。
 
 ## 当前执行链路
 
@@ -98,15 +99,16 @@ stockagent.cli:main
   -> app.run_stock_analysis()
   -> load_llm_config()
   -> agents.orchestrator.run_stock_analysis_agent()
-  -> report.writer.write_markdown_report()
+  -> report.writer.write_report_artifacts()
 ```
 
 默认分析流程中：
 
 - `industry_analyst` 使用 `web_search` 做行业和近期信息收集。
-- `fundamentals_analyst` 使用 EDGAR 财务数据和确定性指标工具做基本面分析。
-- `valuation_analyst` 会结合 `web_search` 提取的市场输入，调用 `compute_valuation_metrics()` 计算 trailing PE / PB / PS。
+- `fundamentals_analyst` 使用 EDGAR 财务数据和确定性指标工具做基本面分析，并保留年度 10-K 元数据。
+- `valuation_analyst` 会结合 `web_search` 提取的市场输入，调用 `compute_valuation_metrics()` 计算 trailing PE / PB / PS；实际传入的价格和市值会被确定性工具结果覆盖。
 - `risk_analyst` 会综合前序结构化分析并补充近期公司风险信息。
+- 汇总阶段保留内部来源标记并渲染为脚注；未知标记仅记录 warning 后移除，不会让整份报告失败。
 
 ## 项目结构
 
@@ -128,4 +130,6 @@ src/stockagent/
 ## 当前限制
 
 - 当前仅支持 `openai:` provider 的模型构建。
-- 估值链路已经有 PE / PB / PS 的确定性计算，但市场输入仍来自非结构化搜索结果，可靠性依赖来源质量。
+- 网页引用是尽力而为：未标记来源的 LLM 叙事仍可能出现；已选取且被引用的来源会在 Markdown 和 `sources.json` 中保持一致。
+- 估值链路已经有 PE / PB / PS 的确定性计算，但市场输入仍来自非结构化搜索结果；价格、市值、币种和日期可能缺失或并非同一时点。
+- 财务数据仅覆盖最近可得年度 10-K，未纳入最新 10-Q 与 TTM；P0 不提供 DCF、EV/EBITDA、可比公司表或确定性财务表渲染。

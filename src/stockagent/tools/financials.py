@@ -4,6 +4,8 @@ import json
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
+from pydantic import BaseModel
+
 from stockagent import api
 
 
@@ -126,6 +128,8 @@ def _valuation_unavailable_reasons(metrics: Any) -> dict[str, str]:
 
 
 def _serialize(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return _serialize(value.model_dump(mode="json"))
     if is_dataclass(value):
         return _serialize(asdict(value))
     if isinstance(value, dict):

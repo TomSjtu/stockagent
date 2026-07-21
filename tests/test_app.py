@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
+from stockagent.agents.orchestrator import GeneratedReport
 from stockagent.app import run_stock_analysis
 from stockagent.config import RuntimeOptions
 from stockagent.errors import ConfigurationError
+from stockagent.report.evidence import EvidenceBundle
+from stockagent.report.writer import ReportArtifacts
 
 
 class RunStockAnalysisTest(unittest.TestCase):
@@ -20,8 +23,16 @@ class RunStockAnalysisTest(unittest.TestCase):
         ):
             run_stock_analysis(options)
 
-    def test_run_stock_analysis_uses_agent_report_path(self) -> None:
+    def test_run_stock_analysis_writes_agent_delivery_artifacts(self) -> None:
         options = RuntimeOptions(ticker="fake", years=2)
+        report = GeneratedReport(
+            markdown="# Agent Report\n",
+            evidence_bundle=EvidenceBundle(),
+        )
+        artifacts = ReportArtifacts(
+            markdown_path=Path("output/FAKE.md"),
+            sources_path=Path("output/FAKE.sources.json"),
+        )
 
         with (
             patch("stockagent.app.load_llm_config", return_value="llm-config"),
@@ -30,22 +41,24 @@ class RunStockAnalysisTest(unittest.TestCase):
             ),
             patch(
                 "stockagent.agents.orchestrator.run_stock_analysis_agent",
-                return_value="# Agent Report\n",
+                return_value=report,
             ) as run_agent,
             patch(
-                "stockagent.report.writer.write_markdown_report",
-                return_value=Path("output/FAKE.md"),
+                "stockagent.report.writer.write_report_artifacts",
+                return_value=artifacts,
             ) as write_report,
         ):
-            output_path = run_stock_analysis(options)
+            output_artifacts = run_stock_analysis(options)
 
         run_agent.assert_called_once_with("fake", 2, "llm-config")
         write_report.assert_called_once_with(
             "fake",
             "# Agent Report\n",
+            evidence_bundle=report.evidence_bundle,
             output_dir=options.output_dir,
+            report_date=ANY,
         )
-        self.assertEqual(output_path, Path("output/FAKE.md"))
+        self.assertEqual(output_artifacts, artifacts)
 
     def test_run_stock_analysis_logs_main_stages(self) -> None:
         options = RuntimeOptions(ticker="fake", years=2)
@@ -57,11 +70,17 @@ class RunStockAnalysisTest(unittest.TestCase):
             ),
             patch(
                 "stockagent.agents.orchestrator.run_stock_analysis_agent",
-                return_value="# Agent Report\n",
+                return_value=GeneratedReport(
+                    markdown="# Agent Report\n",
+                    evidence_bundle=EvidenceBundle(),
+                ),
             ),
             patch(
-                "stockagent.report.writer.write_markdown_report",
-                return_value=Path("output/FAKE.md"),
+                "stockagent.report.writer.write_report_artifacts",
+                return_value=ReportArtifacts(
+                    markdown_path=Path("output/FAKE.md"),
+                    sources_path=Path("output/FAKE.sources.json"),
+                ),
             ),
             self.assertLogs("stockagent.app", level="INFO") as logs,
         ):

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date
 
 import pandas as pd
 
 from stockagent.data.errors import NoDataError, ProviderResponseError
 from stockagent.data.providers import EdgarFinancialsProvider
+from stockagent.financials import SecFilingReference
 
 
 class FakeCompany:
@@ -52,6 +54,9 @@ class FakeCompany:
                 "PaymentsToAcquirePropertyPlantAndEquipment",
             ],
         )
+
+    def get_filings(self, **_: object) -> list[object]:
+        return []
 
 
 class AliasFallbackCompany(FakeCompany):
@@ -117,6 +122,52 @@ class BrokenCompany(FakeCompany):
 
 
 class EdgarFinancialsProviderTest(unittest.TestCase):
+    def test_fetch_annual_records_attaches_resolved_filing_to_matching_year(self) -> None:
+        filing = SecFilingReference(
+            form="10-K",
+            fiscal_year=2024,
+            period_end=date(2024, 12, 31),
+            filed_at=date(2025, 2, 20),
+            cik="123456",
+            accession_number="0000123456-25-000001",
+            primary_document="annual-report.htm",
+            url=(
+                "https://www.sec.gov/Archives/edgar/data/123456/"
+                "000012345625000001/annual-report.htm"
+            ),
+        )
+        resolver_calls: list[set[int]] = []
+
+        def resolve_filings(_company: object, fiscal_years: set[int]):
+            resolver_calls.append(fiscal_years)
+            return {2024: filing}
+
+        provider = EdgarFinancialsProvider(
+            company_factory=FakeCompany,
+            filing_resolver=resolve_filings,
+        )
+
+        records = provider.fetch_annual_records("FAKE", years=2)
+
+        self.assertEqual(resolver_calls, [{2023, 2024}])
+        self.assertIsNone(records[0].filing)
+        self.assertIs(records[1].filing, filing)
+
+    def test_fetch_annual_records_keeps_records_when_filing_resolution_fails(self) -> None:
+        def fail_to_resolve(_company: object, _fiscal_years: set[int]):
+            raise RuntimeError("SEC filings unavailable")
+
+        provider = EdgarFinancialsProvider(
+            company_factory=FakeCompany,
+            filing_resolver=fail_to_resolve,
+        )
+
+        with self.assertLogs("stockagent.data.providers.edgar", level="WARNING"):
+            records = provider.fetch_annual_records("FAKE", years=2)
+
+        self.assertEqual([record.fiscal_year for record in records], [2023, 2024])
+        self.assertEqual([record.filing for record in records], [None, None])
+
     def test_fetch_annual_records_maps_edgar_dataframes(self) -> None:
         provider = EdgarFinancialsProvider(company_factory=FakeCompany)
 

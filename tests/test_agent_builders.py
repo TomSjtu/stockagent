@@ -30,6 +30,7 @@ class AgentBuildersTest(unittest.TestCase):
             builder=build_industry_agent,
             tools=[web_search],
             output_type=IndustryOutput,
+            prompt_terms=("实际采用", "kind='web'", "[industry-1]", "来源优先级"),
         )
 
     def test_fundamentals_builder_uses_single_aggregate_tool(self) -> None:
@@ -38,6 +39,7 @@ class AgentBuildersTest(unittest.TestCase):
             builder=build_fundamentals_agent,
             tools=[get_fundamentals_analysis],
             output_type=FundamentalsOutput,
+            prompt_terms=("SEC 10-K", "[sec-"),
         )
 
     def test_valuation_builder_uses_search_and_valuation_tool(self) -> None:
@@ -46,6 +48,13 @@ class AgentBuildersTest(unittest.TestCase):
             builder=build_valuation_agent,
             tools=[web_search, compute_valuation_metrics],
             output_type=ValuationOutput,
+            prompt_terms=(
+                "实际采用",
+                "kind='web'",
+                "[valuation-1]",
+                "market_inputs",
+                "来源优先级",
+            ),
         )
 
     def test_risk_builder_only_uses_search(self) -> None:
@@ -54,6 +63,7 @@ class AgentBuildersTest(unittest.TestCase):
             builder=build_risk_agent,
             tools=[web_search],
             output_type=RiskOutput,
+            prompt_terms=("实际采用", "kind='web'", "[risk-1]", "来源优先级"),
         )
 
     def _assert_builder_contract(
@@ -63,6 +73,7 @@ class AgentBuildersTest(unittest.TestCase):
         builder: Callable[..., object],
         tools: list[object],
         output_type: type,
+        prompt_terms: tuple[str, ...],
     ) -> None:
         model = object()
         built_agent = object()
@@ -77,6 +88,9 @@ class AgentBuildersTest(unittest.TestCase):
         self.assertEqual(kwargs["tools"], tools)
         self.assertIsInstance(kwargs["system_prompt"], str)
         self.assertTrue(kwargs["system_prompt"].strip())
+        for prompt_term in prompt_terms:
+            with self.subTest(prompt_term=prompt_term):
+                self.assertIn(prompt_term, kwargs["system_prompt"])
         self.assertNotIn("read_file", kwargs["system_prompt"])
         self.assertNotIn("write_file", kwargs["system_prompt"])
         strategy = kwargs["response_format"]

@@ -1,6 +1,31 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
+from typing import Literal
+
+from pydantic import BaseModel
+
+
+class SecFilingReference(BaseModel):
+    """Metadata needed to link annual financial data to its SEC filing."""
+
+    # 实际采用的 SEC 年度申报表类型
+    form: Literal["10-K", "10-K/A"]
+    # 该 filing 对应的公司财年标签
+    fiscal_year: int
+    # 该 filing 覆盖的财年截止日
+    period_end: date
+    # 向 SEC 提交该 filing 的日期
+    filed_at: date
+    # SEC 为申报主体分配的唯一 CIK
+    cik: str
+    # SEC 为本次具体申报分配的 accession number
+    accession_number: str
+    # filing 目录中主 HTML 文档的文件名
+    primary_document: str
+    # SEC Archive 中主 HTML 文档的完整链接
+    url: str
 
 
 @dataclass(slots=True)
@@ -36,6 +61,8 @@ class FinancialRecord:
     operating_cash_flow: float | None = None
     capex: float | None = None
     dividends_paid: float | None = None
+
+    filing: SecFilingReference | None = None
 
 
 @dataclass(slots=True)

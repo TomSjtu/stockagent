@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Mapping
 
 import pandas as pd
 from edgar import Company
@@ -11,9 +11,17 @@ from stockagent.data.errors import (
     ProviderError,
     ProviderResponseError,
 )
-from stockagent.financials import FinancialRecord
+from stockagent.data.providers.edgar_filings import (
+    AnnualFilingCompany,
+    resolve_annual_filings,
+)
+from stockagent.financials import FinancialRecord, SecFilingReference
+from stockagent.observability import get_logger
 
 FieldConceptMap = dict[str, tuple[str, ...]]
+AnnualFilingResolver = Callable[
+    [AnnualFilingCompany, Collection[int]], Mapping[int, SecFilingReference]
+]
 
 # FinancialRecord field -> prioritized XBRL concepts.
 # Concept names are DataFrame index values and are more stable than labels.
@@ -64,8 +72,13 @@ class EdgarFinancialsProvider:
 
     provider_name = "edgar"
 
-    def __init__(self, company_factory: Callable[[str], Company] = Company) -> None:
+    def __init__(
+        self,
+        company_factory: Callable[[str], Company] = Company,
+        filing_resolver: AnnualFilingResolver = resolve_annual_filings,
+    ) -> None:
         self._company_factory = company_factory
+        self._filing_resolver = filing_resolver
 
     def fetch_annual_records(
         self,
@@ -122,7 +135,30 @@ class EdgarFinancialsProvider:
 
             records.append(record)
 
+        filings = self._resolve_filings(company, records, ticker)
+        for record in records:
+            record.filing = filings.get(record.fiscal_year)
+
         return records
+
+    def _resolve_filings(
+        self,
+        company: AnnualFilingCompany,
+        records: list[FinancialRecord],
+        ticker: str,
+    ) -> Mapping[int, SecFilingReference]:
+        try:
+            return self._filing_resolver(
+                company,
+                {record.fiscal_year for record in records},
+            )
+        except Exception:
+            get_logger(__name__).warning(
+                "无法获取 %s 的年度 SEC filing 元数据，报告将保留缺失来源",
+                ticker,
+                exc_info=True,
+            )
+            return {}
 
 
 def _get_period_columns(df: pd.DataFrame) -> list[str]:

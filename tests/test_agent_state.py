@@ -6,41 +6,88 @@ from pydantic import ValidationError
 
 from stockagent.agents.state import (
     AnalysisState,
+    Evidence,
     FundamentalsOutput,
     IndustryOutput,
+    MarketInputs,
     RiskOutput,
     ValuationOutput,
 )
+from stockagent.financials import SecFilingReference
 
 
 class AgentStateTest(unittest.TestCase):
     def test_outputs_accept_the_cross_agent_contract(self) -> None:
         industry = IndustryOutput(
             narrative="行业分析",
-            sources=["https://example.test/industry"],
+            evidence=[
+                Evidence(
+                    id="industry-1",
+                    kind="web",
+                    title="行业报告",
+                    url="https://example.test/industry",
+                    publisher="Example Research",
+                    published_date="2026-07-01",
+                    excerpt="行业需求增长。",
+                    source_agent="industry_analyst",
+                )
+            ],
         )
         fundamentals = FundamentalsOutput(
             narrative="基本面分析",
             key_metrics={"roe": 0.25, "debt_ratio": None},
             concerns=["收入增速放缓"],
+            financial_filings=[
+                SecFilingReference(
+                    form="10-K",
+                    fiscal_year=2025,
+                    period_end="2026-01-25",
+                    filed_at="2026-02-20",
+                    cik="1045810",
+                    accession_number="0001045810-26-000010",
+                    primary_document="nvda-20260125.htm",
+                    url="https://www.sec.gov/Archives/edgar/data/1045810/"
+                    "000104581026000010/nvda-20260125.htm",
+                )
+            ],
         )
         valuation = ValuationOutput(
             narrative="估值分析",
             pe_ratio=30.0,
             pb_ratio=None,
             ps_ratio=8.0,
-            price_source="https://example.test/price",
+            evidence=[
+                Evidence(
+                    id="valuation-1",
+                    kind="web",
+                    title="Market data",
+                    url="https://example.test/price",
+                    publisher=None,
+                    published_date=None,
+                    excerpt=None,
+                    source_agent="valuation_analyst",
+                )
+            ],
+            market_inputs=MarketInputs(
+                price=170.5,
+                market_cap=4_000_000_000_000.0,
+                currency="USD",
+                as_of="2026-07-20",
+                evidence_id="valuation-1",
+            ),
         )
         risk = RiskOutput(
             narrative="风险分析",
             overall_rating="中",
             key_risks=["需求波动"],
-            sources=["https://example.test/risk"],
+            evidence=[],
         )
 
-        self.assertEqual(industry.sources, ["https://example.test/industry"])
+        self.assertEqual(industry.evidence[0].id, "industry-1")
         self.assertIsNone(fundamentals.key_metrics["debt_ratio"])
+        self.assertEqual(fundamentals.financial_filings[0].fiscal_year, 2025)
         self.assertEqual(valuation.pe_ratio, 30.0)
+        self.assertEqual(valuation.market_inputs.evidence_id, "valuation-1")
         self.assertEqual(risk.overall_rating, "中")
 
     def test_risk_output_rejects_an_unknown_rating(self) -> None:
@@ -49,14 +96,63 @@ class AgentStateTest(unittest.TestCase):
                 narrative="风险分析",
                 overall_rating="极高",
                 key_risks=[],
-                sources=[],
+                evidence=[],
             )
+
+    def test_output_rejects_duplicate_evidence_ids(self) -> None:
+        evidence = {
+            "id": "industry-1",
+            "kind": "web",
+            "title": "行业报告",
+            "url": "https://example.test/industry",
+            "publisher": None,
+            "published_date": None,
+            "excerpt": None,
+            "source_agent": "industry_analyst",
+        }
+
+        with self.assertRaises(ValidationError):
+            IndustryOutput(narrative="行业分析", evidence=[evidence, evidence])
+
+    def test_evidence_models_preserve_missing_values_in_json(self) -> None:
+        output = ValuationOutput(
+            narrative="估值分析",
+            pe_ratio=None,
+            pb_ratio=None,
+            ps_ratio=None,
+            evidence=[
+                Evidence(
+                    id="valuation-1",
+                    kind="web",
+                    title="市场数据",
+                    url="https://example.test/market",
+                    publisher=None,
+                    published_date=None,
+                    excerpt=None,
+                    source_agent="valuation_analyst",
+                )
+            ],
+            market_inputs=MarketInputs(
+                price=None,
+                market_cap=None,
+                currency=None,
+                as_of=None,
+                evidence_id=None,
+            ),
+        )
+
+        payload = output.model_dump(mode="json")
+
+        self.assertIsNone(payload["evidence"][0]["publisher"])
+        self.assertIsNone(payload["evidence"][0]["published_date"])
+        self.assertIsNone(payload["market_inputs"]["price"])
+        self.assertIsNone(payload["market_inputs"]["as_of"])
 
     def test_outputs_do_not_forbid_extra_fields(self) -> None:
         output = IndustryOutput.model_validate(
             {
                 "narrative": "行业分析",
-                "sources": [],
+                "evidence": [],
                 "confidence": 0.9,
             }
         )
@@ -67,7 +163,14 @@ class AgentStateTest(unittest.TestCase):
         self.assertEqual(AnalysisState.__required_keys__, {"ticker", "years"})
         self.assertEqual(
             AnalysisState.__optional_keys__,
-            {"industry", "fundamentals", "valuation", "risk", "final_report"},
+            {
+                "industry",
+                "fundamentals",
+                "valuation",
+                "risk",
+                "final_report",
+                "cited_evidence_ids",
+            },
         )
 
 
