@@ -4,7 +4,7 @@ import os
 from datetime import date
 from typing import TYPE_CHECKING
 
-from stockagent.config import RuntimeOptions, load_llm_config
+from stockagent.config import CLIOptions, load_llm_config
 from stockagent.errors import ConfigurationError
 from stockagent.observability import get_logger
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from stockagent.report.writer import ReportArtifacts
 
 
-def run_stock_analysis(options: RuntimeOptions) -> ReportArtifacts:
+def run_stock_analysis(options: CLIOptions) -> ReportArtifacts:
     """Run one report workflow and write its paired delivery artifacts.
 
     Raises ConfigurationError when a required external-service credential is absent.

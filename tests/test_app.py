@@ -6,7 +6,7 @@ from unittest.mock import ANY, patch
 
 from stockagent.agents.orchestrator import GeneratedReport
 from stockagent.app import run_stock_analysis
-from stockagent.config import RuntimeOptions
+from stockagent.config import CLIOptions
 from stockagent.errors import ConfigurationError
 from stockagent.report.evidence import EvidenceBundle
 from stockagent.report.writer import ReportArtifacts
@@ -14,7 +14,7 @@ from stockagent.report.writer import ReportArtifacts
 
 class RunStockAnalysisTest(unittest.TestCase):
     def test_run_stock_analysis_requires_tavily_api_key(self) -> None:
-        options = RuntimeOptions(ticker="fake", years=2)
+        options = CLIOptions(ticker="fake", years=2)
 
         with (
             patch("stockagent.app.load_llm_config", return_value="llm-config"),
@@ -24,7 +24,7 @@ class RunStockAnalysisTest(unittest.TestCase):
             run_stock_analysis(options)
 
     def test_run_stock_analysis_writes_agent_delivery_artifacts(self) -> None:
-        options = RuntimeOptions(ticker="fake", years=2)
+        options = CLIOptions(ticker="fake", years=2)
         report = GeneratedReport(
             markdown="# Agent Report\n",
             evidence_bundle=EvidenceBundle(),
@@ -61,7 +61,7 @@ class RunStockAnalysisTest(unittest.TestCase):
         self.assertEqual(output_artifacts, artifacts)
 
     def test_run_stock_analysis_logs_main_stages(self) -> None:
-        options = RuntimeOptions(ticker="fake", years=2)
+        options = CLIOptions(ticker="fake", years=2)
 
         with (
             patch("stockagent.app.load_llm_config", return_value="llm-config"),

@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from stockagent.app import run_stock_analysis
-from stockagent.config import RuntimeOptions, default_output_dir
+from stockagent.config import CLIOptions, default_output_dir
 from stockagent.errors import StockAgentError
 from stockagent.observability import get_logger, log_stage_failed, setup_logging
 
@@ -48,12 +48,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def parse_args(
     argv: Sequence[str] | None = None,
-) -> RuntimeOptions:
+) -> CLIOptions:
     """Parse CLI arguments into the application runtime options."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    return RuntimeOptions(
+    return CLIOptions(
         ticker=args.ticker,
         years=args.years,
         output_dir=args.output_dir,

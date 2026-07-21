@@ -137,9 +137,9 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 | 路径 | 作用 | 直接协作对象 |
 | --- | --- | --- |
 | `src/stockagent/__init__.py` | 顶层包标记；当前没有公开业务 API。 | 使 `stockagent` 可作为包导入。 |
-| `src/stockagent/cli.py` | 定义 argparse 参数、正整数校验、日志初始化和进程级错误处理。 | 调用 `app.run_stock_analysis()`；使用 `RuntimeOptions` 和 `StockAgentError`。 |
+| `src/stockagent/cli.py` | 定义 argparse 参数、正整数校验、日志初始化和进程级错误处理。 | 调用 `app.run_stock_analysis()`；使用 `CLIOptions` 和 `StockAgentError`。 |
 | `src/stockagent/app.py` | 应用服务入口，连接配置、Agent 报告生成和双文件报告交付。 | 延迟导入 `agents` 与 `report.writer`，以同一报告日期写入 Markdown 和 JSON。 |
-| `src/stockagent/config.py` | 定义 `LLMConfig`、`RuntimeOptions`、默认模型/EDGAR identity、`.env` 加载和 OpenAI 环境变量映射。 | 被 CLI、应用层、LLM 工厂、API 和 orchestrator 使用。 |
+| `src/stockagent/config.py` | 定义 `LLMConfig`、`CLIOptions`、默认模型/EDGAR identity、`.env` 加载和 OpenAI 环境变量映射。 | 被 CLI、应用层、LLM 工厂、API 和 orchestrator 使用。 |
 | `src/stockagent/errors.py` | 定义所有预期运行时错误的根类 `StockAgentError` 及 `ConfigurationError`。 | CLI 统一捕获；数据和 Agent 错误继承该根类。 |
 | `src/stockagent/llm.py` | 校验 `provider:model`，构建 `ChatOpenAI`，并区分原生 OpenAI 与兼容 base URL。 | 由 orchestrator 使用；依赖 `LLMConfig`。 |
 | `src/stockagent/observability.py` | 配置 stderr 日志格式与第三方 logger 等级，提供 logger 和阶段日志辅助函数。 | CLI、应用层、Agent 回调和报告写入器使用。 |

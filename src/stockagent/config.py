@@ -32,8 +32,8 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
-class RuntimeOptions:
-    """Validated runtime choices supplied by the CLI entry boundary."""
+class CLIOptions:
+    """Validated command-line arguments for one analysis run."""
 
     # CLI 位置参数传入的证券代码
     ticker: str
