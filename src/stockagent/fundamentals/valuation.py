@@ -14,6 +14,7 @@ def _safe_positive_divide(
     numerator: float | None,
     denominator: float | None,
 ) -> float | None:
+    """Divide only positive valuation operands, otherwise report an unavailable ratio."""
     positive_numerator = _positive(numerator)
     positive_denominator = _positive(denominator)
     if positive_numerator is None or positive_denominator is None:
@@ -29,6 +30,7 @@ def compute_valuation(vi: ValuationInput) -> ValuationMetrics:
         market_cap=vi.market_cap,
     )
 
+    # 先计算 price / eps_diluted；结果为 None 时改用 market_cap / net_income
     metrics.pe_ratio = _safe_positive_divide(vi.price, vi.eps_diluted)
     if metrics.pe_ratio is None:
         metrics.pe_ratio = _safe_positive_divide(vi.market_cap, vi.net_income)

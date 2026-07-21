@@ -12,6 +12,8 @@ _UNKNOWN_INTERNAL_MARKER = r"[a-z][a-z0-9_]*-\d+"
 
 @dataclass(frozen=True)
 class CitationRenderResult:
+    """Markdown rendered with footnotes and the evidence IDs it actually cites."""
+
     # 将内部证据标记替换为脚注后的报告正文
     markdown: str
     # 按正文首次引用顺序排列的证据 ID
@@ -23,6 +25,7 @@ def render_citations(
     evidence: list[Evidence],
 ) -> CitationRenderResult:
     """Replace known internal evidence markers with Markdown footnotes."""
+    # 以 evidence.id 为键建立查找表，并生成识别这些 ID 的内部标记正则
     evidence_by_id = {item.id: item for item in evidence}
     marker_pattern = _marker_pattern(evidence_by_id)
     cited_evidence_ids: list[str] = []
@@ -35,6 +38,7 @@ def render_citations(
             logger.warning("报告包含未知证据标记，已移除: %s", evidence_id)
             return ""
 
+        # 首次遇到某 ID 时分配下一个脚注号，并将该 ID 追加到 cited_evidence_ids
         if evidence_id not in footnote_numbers:
             cited_evidence_ids.append(evidence_id)
             footnote_numbers[evidence_id] = len(cited_evidence_ids)
@@ -71,5 +75,6 @@ def _format_reference(evidence: Evidence) -> str:
 
 
 def _marker_pattern(evidence_by_id: dict[str, Evidence]) -> re.Pattern[str]:
+    """Build a pattern for known evidence markers and removable internal markers."""
     known_ids = [re.escape(evidence_id) for evidence_id in evidence_by_id]
     return re.compile(r"\[(" + "|".join([*known_ids, _UNKNOWN_INTERNAL_MARKER]) + r")\]")

@@ -10,7 +10,7 @@ from stockagent import api
 
 
 def fetch_company_financials(ticker: str, years: int = 3) -> str:
-    """Fetch annual financial data for a company as JSON."""
+    """Fetch the validated annual financial window as a tool JSON payload."""
     records = api.fetch_financials(ticker, years)
     return _to_json(
         {
@@ -66,7 +66,7 @@ def compute_valuation_metrics(
     market_cap: float | None = None,
     years: int = 3,
 ) -> str:
-    """Compute trailing PE/PB/PS from market inputs and latest financials."""
+    """Compute trailing PE/PB/PS from market inputs and latest financials as JSON."""
     records = api.fetch_financials(ticker, years)
     metrics = api.compute_valuation(records, price, market_cap)
     return _to_json(
@@ -96,6 +96,7 @@ def _metric_payload(
     metric_name: str,
     metrics: dict[int, Any],
 ) -> str:
+    """Build the JSON boundary shared by deterministic metric tools."""
     return _to_json(
         {
             "ticker": ticker.upper(),
@@ -106,6 +107,7 @@ def _metric_payload(
 
 
 def _to_json(value: Any) -> str:
+    """Serialize domain values for an LLM tool without changing their semantics."""
     return json.dumps(
         _serialize(value),
         ensure_ascii=False,
@@ -115,6 +117,7 @@ def _to_json(value: Any) -> str:
 
 
 def _valuation_unavailable_reasons(metrics: Any) -> dict[str, str]:
+    """Describe unavailable valuation ratios without substituting numeric defaults."""
     reasons = {}
     if metrics.pe_ratio is None:
         reasons["pe_ratio"] = (
@@ -128,6 +131,7 @@ def _valuation_unavailable_reasons(metrics: Any) -> dict[str, str]:
 
 
 def _serialize(value: Any) -> Any:
+    """Recursively convert Pydantic and dataclass values to JSON-compatible data."""
     if isinstance(value, BaseModel):
         return _serialize(value.model_dump(mode="json"))
     if is_dataclass(value):

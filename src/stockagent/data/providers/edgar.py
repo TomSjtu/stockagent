@@ -77,6 +77,7 @@ class EdgarFinancialsProvider:
         company_factory: Callable[[str], Company] = Company,
         filing_resolver: AnnualFilingResolver = resolve_annual_filings,
     ) -> None:
+        """Create a provider with injectable EDGAR access and filing resolution."""
         self._company_factory = company_factory
         self._filing_resolver = filing_resolver
 
@@ -85,6 +86,7 @@ class EdgarFinancialsProvider:
         ticker: str,
         years: int,
     ) -> list[FinancialRecord]:
+        """Fetch sorted annual records or translate provider failures to domain errors."""
         try:
             records = self._fetch_annual_records(ticker, years)
         except ProviderError:
@@ -102,6 +104,7 @@ class EdgarFinancialsProvider:
                 provider=self.provider_name,
                 detail="no annual fiscal periods were parsed",
             )
+        # 按 FinancialRecord.fiscal_year 原地排序后返回 records
         records.sort(key=lambda record: record.fiscal_year)
         return records
 
@@ -110,6 +113,7 @@ class EdgarFinancialsProvider:
         ticker: str,
         years: int,
     ) -> list[FinancialRecord]:
+        """Normalize EDGAR statement tables into the domain annual-record shape."""
         company = self._company_factory(ticker)
         company_name = company.get_ticker()
 
@@ -117,6 +121,7 @@ class EdgarFinancialsProvider:
         balance = company.balance_sheet(period="annual", periods=years, as_dataframe=True)
         cashflow = company.cashflow_statement(period="annual", periods=years, as_dataframe=True)
 
+        # 为 income 表中的每个 FY 列创建一条 FinancialRecord，并收集到 records
         records = []
         for col in _get_period_columns(income):
             fiscal_year = _parse_fiscal_year(col)
@@ -129,6 +134,7 @@ class EdgarFinancialsProvider:
                 fiscal_year=fiscal_year,
             )
 
+            # 依次从收入、资产负债和现金流表的同一 FY 列填充 record 字段
             _fill_from_df(record, income, col, INCOME_FIELD_CONCEPTS)
             _fill_from_df(record, balance, col, BALANCE_FIELD_CONCEPTS)
             _fill_from_df(record, cashflow, col, CASHFLOW_FIELD_CONCEPTS)
@@ -147,12 +153,14 @@ class EdgarFinancialsProvider:
         records: list[FinancialRecord],
         ticker: str,
     ) -> Mapping[int, SecFilingReference]:
+        """Resolve filing metadata without discarding usable financial statements."""
         try:
             return self._filing_resolver(
                 company,
                 {record.fiscal_year for record in records},
             )
         except Exception:
+            # filing 解析异常时记录 warning，并返回空映射，使各 record.filing 保持 None
             get_logger(__name__).warning(
                 "无法获取 %s 的年度 SEC filing 元数据，报告将保留缺失来源",
                 ticker,
@@ -178,8 +186,9 @@ def _fill_from_df(
     period_col: str,
     field_concepts: FieldConceptMap,
 ) -> None:
-    """Fill FinancialRecord fields from a DataFrame using concept index mapping."""
+    """Fill a record from ordered EDGAR concept aliases without overwriting data."""
     for field_name, concepts in field_concepts.items():
+        # 已有值跳过；否则按 field_concepts 中的概念顺序为该字段查找值
         if getattr(record, field_name) is not None:
             continue
 
@@ -193,6 +202,7 @@ def _first_available_value(
     period_col: str,
     concepts: tuple[str, ...],
 ) -> float | None:
+    """Return the first parseable value from the configured EDGAR concept order."""
     if period_col not in df.columns:
         return None
 
@@ -201,6 +211,7 @@ def _first_available_value(
             continue
 
         value = df.loc[concept, period_col]
+        # 同一概念有多行时，逐个单元格转换并返回第一个可解析的 float
         if isinstance(value, pd.Series):
             for item in value:
                 parsed = _to_float_or_none(item)
@@ -216,6 +227,7 @@ def _first_available_value(
 
 
 def _to_float_or_none(value: object) -> float | None:
+    """Normalize a provider cell while preserving absence as None."""
     if pd.isna(value):
         return None
     try:

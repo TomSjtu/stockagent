@@ -36,18 +36,27 @@ from stockagent.report.evidence import EvidenceBundle
 
 @dataclass(frozen=True)
 class AnalysisNodes:
+    """Concrete LangGraph node callables for one stock-analysis workflow."""
+
+    # 调用行业 Agent 并返回 {"industry": IndustryOutput} 的节点
     industry: StateNode
+    # 调用基本面 Agent 并返回 {"fundamentals": FundamentalsOutput} 的节点
     fundamentals: StateNode
+    # 调用估值 Agent 并返回 {"valuation": ValuationOutput} 的节点
     valuation: StateNode
+    # 调用风险 Agent 并返回 {"risk": RiskOutput} 的节点
     risk: StateNode
+    # 汇总上游输出并返回 final_report 与 cited_evidence_ids 的节点
     synthesize: StateNode
 
 
 @dataclass(frozen=True)
 class GeneratedReport:
-    """一次分析生成的 Markdown 报告及其可审计证据包"""
+    """Rendered Markdown and the auditable evidence bundle from one analysis run."""
 
+    # 已将内部证据标记渲染为脚注的最终报告正文
     markdown: str
+    # 与 markdown 来自同一 final state 的证据、市场输入和 filing 元数据
     evidence_bundle: EvidenceBundle
 
 
@@ -55,6 +64,7 @@ StructuredOutputT = TypeVar("StructuredOutputT", bound=BaseModel)
 
 
 def build_analysis_graph(nodes: AnalysisNodes):
+    """Build the fixed dependency graph for one report analysis."""
     graph = StateGraph(AnalysisState)
     graph.add_node("industry", nodes.industry)
     graph.add_node("fundamentals", nodes.fundamentals)
@@ -62,6 +72,7 @@ def build_analysis_graph(nodes: AnalysisNodes):
     graph.add_node("risk", nodes.risk)
     graph.add_node("synthesize", nodes.synthesize)
 
+    # 从 START 并行运行行业和基本面节点，再依次写入估值、风险和最终报告
     graph.add_edge(START, "industry")
     graph.add_edge(START, "fundamentals")
     graph.add_edge(["industry", "fundamentals"], "valuation")
@@ -72,6 +83,7 @@ def build_analysis_graph(nodes: AnalysisNodes):
 
 
 def build_analysis_nodes(model: BaseChatModel) -> AnalysisNodes:
+    """Create the typed node implementations bound to one language model."""
     return AnalysisNodes(
         industry=_build_industry_node(build_industry_agent(model)),
         fundamentals=_build_fundamentals_node(build_fundamentals_agent(model)),
@@ -82,6 +94,7 @@ def build_analysis_nodes(model: BaseChatModel) -> AnalysisNodes:
 
 
 def _build_industry_node(agent: Any) -> StateNode:
+    """Build a node that invokes the industry agent and writes its output to state."""
     def industry(state: AnalysisState) -> dict[str, IndustryOutput]:
         output, _messages = _invoke_structured_agent(
             agent,
@@ -99,6 +112,7 @@ def _build_industry_node(agent: Any) -> StateNode:
 
 
 def _build_fundamentals_node(agent: Any) -> StateNode:
+    """Build a node that invokes the fundamentals agent and writes its output to state."""
     def fundamentals(state: AnalysisState) -> dict[str, FundamentalsOutput]:
         output, messages = _invoke_structured_agent(
             agent,
@@ -110,6 +124,7 @@ def _build_fundamentals_node(agent: Any) -> StateNode:
             ),
             output_type=FundamentalsOutput,
         )
+        # 从本节点工具消息提取 filing，并写回 fundamentals.financial_filings
         return {
             "fundamentals": _apply_deterministic_fundamentals_filings(
                 output,
@@ -122,6 +137,7 @@ def _build_fundamentals_node(agent: Any) -> StateNode:
 
 
 def _build_valuation_node(agent: Any) -> StateNode:
+    """Build a node that invokes the valuation agent and writes its output to state."""
     def valuation(state: AnalysisState) -> dict[str, ValuationOutput]:
         output, messages = _invoke_structured_agent(
             agent,
@@ -134,6 +150,7 @@ def _build_valuation_node(agent: Any) -> StateNode:
             ),
             output_type=ValuationOutput,
         )
+        # 将工具返回的 PE、PB、PS、price 和 market_cap 写入 valuation 输出
         return {
             "valuation": _apply_deterministic_valuation_metrics(
                 output,
@@ -147,6 +164,7 @@ def _build_valuation_node(agent: Any) -> StateNode:
 
 
 def _build_risk_node(agent: Any) -> StateNode:
+    """Build a node that invokes the risk agent and writes its output to state."""
     def risk(state: AnalysisState) -> dict[str, RiskOutput]:
         output, _messages = _invoke_structured_agent(
             agent,
@@ -166,6 +184,7 @@ def _build_risk_node(agent: Any) -> StateNode:
 
 
 def _build_synthesize_node(model: BaseChatModel) -> StateNode:
+    """Build a node that synthesizes Markdown and replaces evidence markers with footnotes."""
     def synthesize(state: AnalysisState) -> dict[str, object]:
         logger = get_logger(__name__)
         logger.info("主 agent 开始汇总最终报告")
@@ -192,6 +211,7 @@ def _build_synthesize_node(model: BaseChatModel) -> StateNode:
             ]
         )
         report = _extract_markdown(response)
+        # 用 state 中聚合的 evidence 将报告里的 [evidence-id] 标记替换为 Markdown 脚注
         citation_result = render_citations(
             report,
             _build_evidence_bundle(state, cited_evidence_ids=[]).evidence,
@@ -216,6 +236,7 @@ def _invoke_structured_agent(
     payload: dict[str, list[dict[str, str]]],
     output_type: type[StructuredOutputT],
 ) -> tuple[StructuredOutputT, list[Any]]:
+    """Invoke one agent and return its validated local output and local messages."""
     logger = get_logger(__name__)
     logger.info("启动 agent: %s", agent_name)
     result = agent.invoke(
@@ -237,6 +258,7 @@ def _extract_structured_response(
     agent_name: str,
     output_type: type[StructuredOutputT],
 ) -> tuple[StructuredOutputT, list[Any]]:
+    """Validate an agent's local result and fail before invalid data reaches another node."""
     if not isinstance(result, Mapping):
         raise AgentOutputError(f"{agent_name} returned an invalid result")
 
@@ -244,6 +266,7 @@ def _extract_structured_response(
     if not isinstance(messages, list):
         raise AgentOutputError(f"{agent_name} result is missing local messages")
 
+    # 扫描本节点消息；任一 ToolMessage 标记为 error 时立即抛出 AgentOutputError
     for message in messages:
         if isinstance(message, ToolMessage) and message.status == "error":
             tool_name = message.name or "unknown tool"
@@ -270,6 +293,8 @@ def _apply_deterministic_valuation_metrics(
     ticker: str,
     years: int,
 ) -> ValuationOutput:
+    """Replace LLM valuation facts with the matching deterministic tool payload."""
+    # 在本节点消息中找到最近一次成功的 compute_valuation_metrics 工具调用
     tool_message = next(
         (
             message
@@ -285,6 +310,7 @@ def _apply_deterministic_valuation_metrics(
     if not isinstance(tool_message.content, str):
         raise AgentOutputError("compute_valuation_metrics returned non-text JSON")
 
+    # 解析工具 JSON，并校验其中的 ticker、years、估值字段和市场输入字段
     try:
         payload = json.loads(tool_message.content)
     except json.JSONDecodeError as exc:
@@ -344,6 +370,7 @@ def _apply_deterministic_fundamentals_filings(
     *,
     ticker: str,
 ) -> FundamentalsOutput:
+    """Extract audited filing references from the deterministic fundamentals tool."""
     tool_message = next(
         (
             message
@@ -373,6 +400,7 @@ def _apply_deterministic_fundamentals_filings(
     if not isinstance(records, list):
         raise AgentOutputError("get_fundamentals_analysis returned invalid records")
 
+    # 遍历工具返回的 records，将 fiscal_year 相同的 filing 转为 SecFilingReference 列表
     financial_filings: list[SecFilingReference] = []
     for record in records:
         if not isinstance(record, Mapping):
@@ -402,6 +430,7 @@ def _apply_deterministic_fundamentals_filings(
 
 
 def _extract_markdown(response: object) -> str:
+    """Extract nonempty Markdown from supported model response shapes or fail."""
     if isinstance(response, str) and response.strip():
         return response
 
@@ -424,6 +453,7 @@ def run_stock_analysis_agent(
     years: int,
     llm_config: LLMConfig,
 ) -> GeneratedReport:
+    """Run the graph and return a nonempty report with its matched evidence bundle."""
     model = build_model(llm_config)
     graph = build_analysis_graph(build_analysis_nodes(model))
     try:
@@ -452,10 +482,12 @@ def _build_evidence_bundle(
     *,
     cited_evidence_ids: list[str],
 ) -> EvidenceBundle:
+    """Collect all selected evidence and deterministic inputs from the final graph state."""
     industry = _state_output(state, "industry", IndustryOutput)
     fundamentals = _state_output(state, "fundamentals", FundamentalsOutput)
     valuation = _state_output(state, "valuation", ValuationOutput)
     risk = _state_output(state, "risk", RiskOutput)
+    # 合并三个 Agent 的网页 evidence 与基本面工具返回的年度 filing evidence
     evidence = [
         *industry.evidence,
         *valuation.evidence,
@@ -475,6 +507,7 @@ def _state_output(
     name: str,
     output_type: type[StructuredOutputT],
 ) -> StructuredOutputT:
+    """Return a typed required state output or fail at the graph boundary."""
     output = state.get(name)
     if not isinstance(output, output_type):
         raise AgentOutputError(f"analysis graph result is missing {name}")
@@ -482,6 +515,7 @@ def _state_output(
 
 
 def _extract_cited_evidence_ids(state: Mapping[str, object]) -> list[str]:
+    """Return the final citation IDs only when the synthesize node produced them."""
     evidence_ids = state.get("cited_evidence_ids")
     if not isinstance(evidence_ids, list) or not all(
         isinstance(evidence_id, str) for evidence_id in evidence_ids
@@ -491,6 +525,7 @@ def _extract_cited_evidence_ids(state: Mapping[str, object]) -> list[str]:
 
 
 def _filing_evidence(filing: SecFilingReference) -> Evidence:
+    """Represent one deterministic annual filing as report evidence."""
     return Evidence(
         id=f"sec-{filing.fiscal_year}",
         kind="sec_filing",

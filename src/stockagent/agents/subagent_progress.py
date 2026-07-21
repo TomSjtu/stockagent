@@ -17,7 +17,11 @@ _STAGE_DISPLAY_NAMES = {
 
 
 class AgentProgressCallbackHandler(BaseCallbackHandler):
+    """Log known tool stages for one agent without changing agent control flow."""
+
     def __init__(self, agent_name: str) -> None:
+        """Create a callback that correlates tool events for the named agent."""
+        # run_id 是 LangChain 生命周期关联键，只用于将开始/结束日志配对
         self.agent_name = agent_name
         self._logger = get_logger("stockagent.agents.orchestrator")
         self._tool_names_by_run_id: dict[str, str] = {}
@@ -30,6 +34,7 @@ class AgentProgressCallbackHandler(BaseCallbackHandler):
         run_id: Any,
         **kwargs: Any,
     ) -> None:
+        """Log the start of a recognized tool invocation."""
         tool_name = _tool_name(serialized)
         stage_name = _stage_name(self.agent_name, tool_name)
         if stage_name is None:
@@ -45,6 +50,7 @@ class AgentProgressCallbackHandler(BaseCallbackHandler):
         run_id: Any,
         **kwargs: Any,
     ) -> None:
+        """Log completion of a previously recognized tool invocation."""
         tool_name = self._tool_names_by_run_id.pop(str(run_id), None)
         if tool_name is None:
             return
@@ -60,6 +66,7 @@ class AgentProgressCallbackHandler(BaseCallbackHandler):
         run_id: Any,
         **kwargs: Any,
     ) -> None:
+        """Log failure of a previously recognized tool invocation."""
         tool_name = self._tool_names_by_run_id.pop(str(run_id), None)
         if tool_name is None:
             return

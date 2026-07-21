@@ -30,6 +30,7 @@ RISK_PROMPT = (
 
 
 def build_risk_agent(model: BaseChatModel):
+    """Build the risk agent with optional evidence-gathering web search."""
     return create_agent(
         model=model,
         tools=[web_search],

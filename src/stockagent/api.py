@@ -33,22 +33,33 @@ MetricT = TypeVar("MetricT", bound="HasFiscalYear")
 
 
 class HasFiscalYear(Protocol):
+    """Describe values that can be indexed by their fiscal-year label."""
+
     fiscal_year: int
 
 
 @dataclass(slots=True)
 class AnalysisResult:
+    """Deterministic annual analysis returned by the financial application API."""
+
+    # 规范化为大写的请求股票代码
     ticker: str
+    # 连续财年窗口内、按财年升序排列的标准化原始记录
     records: list[FinancialRecord]
+    # 以财年为键的确定性指标，便于工具边界序列化和查询
     profitability: dict[int, ProfitabilityMetrics]
+    # 以财年为键的自由现金流指标
     cash_flow: dict[int, CashFlowMetrics]
+    # 以财年为键的杠杆、流动性和现金偿债指标
     financial_health: dict[int, FinancialHealthMetrics]
+    # 以财年为键的同比增速和相对窗口首年的 CAGR
     growth: dict[int, GrowthMetrics]
 
 
 def fetch_financials(ticker: str, years: int = 3) -> tuple[FinancialRecord, ...]:
     """Fetch a complete, ascending annual financial-record window from EDGAR."""
     _validate_years(years)
+    # 将请求 ticker 转为大写，并以它作为缓存键和 EDGAR 查询参数
     normalized_ticker = ticker.upper()
     records = _fetch_financials_cached(normalized_ticker, years)
     return _complete_fiscal_year_window(normalized_ticker, records, years)
@@ -59,10 +70,12 @@ def _fetch_financials_cached(
     normalized_ticker: str,
     years: int = 3,
 ) -> tuple[FinancialRecord, ...]:
+    """Fetch one normalized ticker window through the process-local provider cache."""
     from edgar import set_identity
 
     from stockagent.data.providers import EdgarFinancialsProvider
 
+    # 在创建 EDGAR provider 前，将配置中的身份字符串传给 edgar 库
     set_identity(DEFAULT_EDGAR_IDENTITY)
 
     provider = EdgarFinancialsProvider()
@@ -77,6 +90,7 @@ def _fetch_financials_cached(
 
 
 def _validate_years(years: object) -> None:
+    """Reject values that cannot express a positive count of fiscal years."""
     if isinstance(years, bool) or not isinstance(years, int) or years <= 0:
         raise ValueError("years must be a positive integer")
 
@@ -86,6 +100,8 @@ def _complete_fiscal_year_window(
     records: tuple[FinancialRecord, ...],
     years: int,
 ) -> tuple[FinancialRecord, ...]:
+    """Return an unbroken ascending annual window or raise its missing years."""
+    # 从最新财年向前生成 years 个目标年份，并检查每个年份都有一条记录
     records_by_year = {record.fiscal_year: record for record in records}
     latest_year = max(records_by_year)
     target_years = range(latest_year - years + 1, latest_year + 1)
@@ -141,6 +157,7 @@ def compute_valuation(
     market_cap: float | None = None,
 ) -> ValuationMetrics:
     """Compute trailing valuation metrics from the latest fiscal year."""
+    # 选择 records 中 fiscal_year 最大的记录，再连同市场输入投影为 ValuationInput
     latest = max(records, key=lambda record: record.fiscal_year)
     valuation_input = build_valuation_input(latest, price, market_cap)
     return compute_valuation_from_input(valuation_input)

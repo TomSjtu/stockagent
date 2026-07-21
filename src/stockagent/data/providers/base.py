@@ -13,4 +13,5 @@ class FinancialsProvider(Protocol):
         ticker: str,
         years: int,
     ) -> list[FinancialRecord]:
+        """Return standardized annual records for the requested recent-year window."""
         ...

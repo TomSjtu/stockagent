@@ -22,6 +22,7 @@ def _positive_int(value: str) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser for a single stock-analysis run."""
     parser = argparse.ArgumentParser()
     parser.add_argument("ticker")
     parser.add_argument(
@@ -48,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
 def parse_args(
     argv: Sequence[str] | None = None,
 ) -> RuntimeOptions:
+    """Parse CLI arguments into the application runtime options."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -60,6 +62,7 @@ def parse_args(
 
 
 def main() -> None:
+    """Run the CLI workflow and present domain errors as command failures."""
     options = parse_args()
     setup_logging(options.log_level)
     logger = get_logger(__name__)

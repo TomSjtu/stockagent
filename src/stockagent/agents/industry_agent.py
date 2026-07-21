@@ -29,6 +29,7 @@ INDUSTRY_PROMPT = (
 
 
 def build_industry_agent(model: BaseChatModel):
+    """Build the industry agent with web search and typed evidence output."""
     return create_agent(
         model=model,
         tools=[web_search],

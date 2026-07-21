@@ -14,6 +14,7 @@ _LOG_LEVELS: dict[LogLevel, int] = {
 
 
 def setup_logging(level: LogLevel = "info") -> None:
+    """Configure process-wide console logging for one CLI run."""
     logging.basicConfig(
         level=_LOG_LEVELS[level],
         format="[%(levelname)s] %(asctime)s %(message)s",
@@ -28,16 +29,20 @@ def setup_logging(level: LogLevel = "info") -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
+    """Return the named logger used by a StockAgent module."""
     return logging.getLogger(name)
 
 
 def log_stage_started(logger: logging.Logger, stage: str) -> None:
+    """Log the start of one user-visible workflow stage."""
     logger.info("%s", stage)
 
 
 def log_stage_completed(logger: logging.Logger, stage: str) -> None:
+    """Log completion of one user-visible workflow stage."""
     logger.info("%s", stage)
 
 
 def log_stage_failed(logger: logging.Logger, stage: str, error: Exception) -> None:
+    """Log a failed workflow stage with its expected domain error."""
     logger.error("%s: %s", stage, error)

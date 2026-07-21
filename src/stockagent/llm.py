@@ -7,6 +7,7 @@ from stockagent.errors import ConfigurationError
 
 
 def build_model(llm_config: LLMConfig):
+    """Build the configured chat model or reject an unsupported provider prefix."""
     provider, separator, model_name = llm_config.model.partition(":")
     if not separator or not provider.strip() or not model_name.strip():
         raise ConfigurationError(
@@ -23,6 +24,7 @@ def build_model(llm_config: LLMConfig):
 
 
 def build_openai_model(llm_config: LLMConfig, model_name: str):
+    """Build the OpenAI-compatible LangChain model for a parsed model name."""
     from langchain_openai import ChatOpenAI
 
     llm_kwargs = {
@@ -31,6 +33,7 @@ def build_openai_model(llm_config: LLMConfig, model_name: str):
         "base_url": llm_config.base_url or None,
         "timeout": 180,
     }
+    # base_url 为空或主机名为 *.openai.com 时，在 llm_kwargs 中加入 use_responses_api=True
     if _is_native_openai_base_url(llm_config.base_url):
         llm_kwargs["use_responses_api"] = True
 

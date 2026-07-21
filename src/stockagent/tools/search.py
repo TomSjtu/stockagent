@@ -14,7 +14,10 @@ def web_search(
     topic: Literal["general", "news", "finance"] = "finance",
     time_range: Literal["day", "week", "month", "year"] | None = None,
 ) -> str:
-    """Search the web for industry news, company updates, and market trends."""
+    """Search the web and return the compact JSON shape exposed to agents.
+
+    Raises ConfigurationError when the Tavily credential is unavailable.
+    """
     tavily_api_key = os.getenv("TAVILY_API_KEY")
     if not tavily_api_key:
         raise ConfigurationError("TAVILY_API_KEY is required for web_search.")
@@ -38,6 +41,8 @@ def web_search(
 
 
 def _compact_search_result(result: dict[str, Any]) -> dict[str, Any]:
+    # 将 Tavily 完整响应裁剪为 query、answer 和 results
+    # 每条 result 只保留标题、URL、摘要、评分和发布日期，供 Agent 选择证据
     items: list[dict[str, Any]] = []
     for item in result.get("results", []):
         items.append(

@@ -45,10 +45,12 @@ class MarketInputs(BaseModel):
 class EvidenceOutput(BaseModel):
     """Base contract for agent outputs that select web evidence."""
 
+    # Agent 选入输出的 Evidence 列表
     evidence: list[Evidence] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_evidence_ids(self) -> Self:
+        """Reject duplicate IDs before evidence is merged into the report bundle."""
         ids = [item.id for item in self.evidence]
         if len(ids) != len(set(ids)):
             raise ValueError("evidence IDs must be unique within an agent output")
@@ -56,36 +58,67 @@ class EvidenceOutput(BaseModel):
 
 
 class IndustryOutput(EvidenceOutput):
+    """Structured industry analysis written by the industry agent."""
+
+    # 行业 Agent 生成的中文 Markdown 片段，可包含 [industry-*] 证据标记
     narrative: str
 
 
 class FundamentalsOutput(BaseModel):
+    """Structured fundamentals analysis and its deterministic filing references."""
+
+    # 基本面 Agent 生成的中文 Markdown 片段，可包含 [sec-*] 证据标记
     narrative: str
+    # Agent 输出的指标名称到数值的映射，用于报告中的重点展示
     key_metrics: dict[str, float | None]
+    # Agent 输出的基本面关注点列表
     concerns: list[str]
+    # 从 get_fundamentals_analysis 工具 records 提取的年度 SEC filing 列表
     financial_filings: list[SecFilingReference] = Field(default_factory=list)
 
 
 class ValuationOutput(EvidenceOutput):
+    """Structured valuation analysis with deterministic metric fields."""
+
+    # 估值 Agent 生成的中文 Markdown 片段，可包含 [valuation-*] 证据标记
     narrative: str
+    # compute_valuation_metrics 返回的市盈率，工具不可计算时为 None
     pe_ratio: float | None
+    # compute_valuation_metrics 返回的市净率，工具不可计算时为 None
     pb_ratio: float | None
+    # compute_valuation_metrics 返回的市销率，工具不可计算时为 None
     ps_ratio: float | None
+    # 传给 compute_valuation_metrics 的市场输入及其 Evidence ID
     market_inputs: MarketInputs = Field(default_factory=MarketInputs)
 
 
 class RiskOutput(EvidenceOutput):
+    """Structured risk assessment written after upstream analysis is available."""
+
+    # 风险 Agent 生成的中文 Markdown 片段，可包含 [risk-*] 证据标记
     narrative: str
+    # 风险 Agent 在 "低"、"中"、"高" 中选择的总体评级
     overall_rating: Literal["低", "中", "高"]
+    # 风险 Agent 输出的具体风险条目
     key_risks: list[str]
 
 
 class AnalysisState(TypedDict):
+    """Typed local outputs exchanged between LangGraph nodes in one run."""
+
+    # graph.invoke 初始 state 中传入的股票代码
     ticker: str
+    # graph.invoke 初始 state 中传入的财年数
     years: int
+    # industry 节点写入的 IndustryOutput
     industry: NotRequired[IndustryOutput]
+    # fundamentals 节点写入的 FundamentalsOutput
     fundamentals: NotRequired[FundamentalsOutput]
+    # valuation 节点写入的 ValuationOutput
     valuation: NotRequired[ValuationOutput]
+    # risk 节点写入的 RiskOutput
     risk: NotRequired[RiskOutput]
+    # synthesize 节点写入的、已替换脚注标记的完整 Markdown 报告
     final_report: NotRequired[str]
+    # synthesize 节点写入的证据 ID 列表，顺序与 Markdown 脚注编号一致
     cited_evidence_ids: NotRequired[list[str]]

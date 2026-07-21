@@ -6,6 +6,7 @@ from stockagent.fundamentals.inputs import GrowthInput
 
 
 def _safe_growth(current: float | None, previous: float | None) -> float | None:
+    """Return year-over-year growth only for a usable prior-year base."""
     if current is None or previous is None or previous == 0:
         return None
     return (current - previous) / previous
@@ -16,6 +17,8 @@ def _safe_cagr(
     beginning: float | None,
     periods: int,
 ) -> float | None:
+    """Return CAGR only when its values and interval satisfy the formula."""
+    # 起点小于等于零、终点为负或期间非正数时返回 None；否则计算 CAGR
     if current is None or beginning is None or beginning <= 0 or current < 0:
         return None
     if periods <= 0:
@@ -34,6 +37,7 @@ def compute_growth(gi: GrowthInput) -> GrowthMetrics:
 
 def compute_growth_series(inputs: list[GrowthInput]) -> list[GrowthMetrics]:
     """Compute YoY growth and CAGR metrics for multiple years."""
+    # 按 fiscal_year 排序；首项作为 CAGR 起点，前一项作为同比基数
     sorted_inputs = sorted(inputs, key=lambda item: item.fiscal_year)
     if not sorted_inputs:
         return []

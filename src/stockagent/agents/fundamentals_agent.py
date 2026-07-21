@@ -23,6 +23,7 @@ FUNDAMENTALS_PROMPT = (
 
 
 def build_fundamentals_agent(model: BaseChatModel):
+    """Build the fundamentals agent backed by deterministic financial tools."""
     return create_agent(
         model=model,
         tools=[get_fundamentals_analysis],

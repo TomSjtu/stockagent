@@ -42,14 +42,17 @@ class LLMResponseError(LLMError):
 
 
 def classify_llm_error(exc: Exception, model: str) -> LLMError:
+    """Classify an unexpected model-call exception for the orchestration boundary."""
     if _is_timeout_error(exc):
         return LLMTimeoutError(model=model, detail=str(exc))
     return LLMResponseError(model=model, detail=str(exc))
 
 
 def _is_timeout_error(exc: BaseException) -> bool:
+    """Detect timeout failures anywhere in an exception cause or context chain."""
     current: BaseException | None = exc
     seen: set[int] = set()
+    # 第三方异常可形成 cause/context 环；按对象身份去重，确保分类本身不会卡住
     while current is not None and id(current) not in seen:
         seen.add(id(current))
         error_name = current.__class__.__name__.lower()

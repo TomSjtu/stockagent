@@ -10,7 +10,7 @@ from stockagent.report.evidence import EvidenceBundle, serialize_sources
 
 @dataclass(frozen=True)
 class ReportArtifacts:
-    """一次报告生成所写入的交付文件路径"""
+    """Paths of the paired delivery artifacts written for one report."""
 
     # 渲染完成的 Markdown 报告路径
     markdown_path: Path
@@ -24,6 +24,7 @@ def write_markdown_report(
     output_dir: Path,
     report_date: date | None = None,
 ) -> Path:
+    """Write a standalone Markdown report using the supplied or current date."""
     logger = get_logger(__name__)
     logger.info("开始写入 Markdown 报告")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -48,6 +49,7 @@ def write_report_artifacts(
     logger.info("开始写入报告产物")
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # 用同一个日期生成 stem，并据此创建 .md 与 .sources.json 路径
     current_date = report_date or date.today()
     stem = f"{ticker.upper()}-{current_date.isoformat()}"
     markdown_path = output_dir / f"{stem}.md"

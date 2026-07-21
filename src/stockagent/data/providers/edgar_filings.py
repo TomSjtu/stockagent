@@ -13,6 +13,7 @@ class AnnualFilingCompany(Protocol):
     """The subset of an EDGAR company used to resolve annual filing metadata."""
 
     def get_filings(self, **kwargs: object) -> Iterable[object]:
+        """Return provider filing objects matching the requested filters."""
         ...
 
 
@@ -20,14 +21,11 @@ def resolve_annual_filings(
     company: AnnualFilingCompany,
     fiscal_years: Collection[int],
 ) -> dict[int, SecFilingReference]:
-    """Resolve the latest 10-K or 10-K/A for each requested fiscal year.
-
-    P0 does not compare restated values across filings, so the latest filing for
-    the same report period is the best available match for the statement data.
-    """
+    """Resolve the latest 10-K or 10-K/A for each requested fiscal year."""
     requested_years = set(fiscal_years)
     references: dict[int, SecFilingReference] = {}
 
+    # 遍历 10-K 和 10-K/A；同一财年只保留排序键最大的 filing 引用
     for filing in company.get_filings(form="10-K", amendments=True):
         reference = _to_reference(filing)
         if reference is None or reference.fiscal_year not in requested_years:
@@ -41,6 +39,7 @@ def resolve_annual_filings(
 
 
 def _to_reference(filing: object) -> SecFilingReference | None:
+    """Convert a provider filing only when it can form a complete audit link."""
     form = getattr(filing, "form", None)
     period_end = _to_date(getattr(filing, "report_date", None))
     filed_at = _to_date(getattr(filing, "filing_date", None))
@@ -48,6 +47,7 @@ def _to_reference(filing: object) -> SecFilingReference | None:
     accession_number = getattr(filing, "accession_number", None)
     primary_document = getattr(filing, "primary_document", None)
 
+    # 缺少表单、日期、CIK、accession 或主文档时返回 None；齐全时构造 Archive URL
     if (
         form not in {"10-K", "10-K/A"}
         or period_end is None
@@ -74,6 +74,7 @@ def _to_reference(filing: object) -> SecFilingReference | None:
 
 
 def _to_date(value: object) -> date | None:
+    """Normalize provider date values or return None for unsupported values."""
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
@@ -87,6 +88,7 @@ def _to_date(value: object) -> date | None:
 
 
 def _normalize_cik(value: object) -> str | None:
+    """Normalize a positive CIK to its archive-path representation."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -98,6 +100,7 @@ def _normalize_cik(value: object) -> str | None:
 
 
 def _filing_sort_key(reference: SecFilingReference) -> tuple[date, bool, str]:
+    """Order duplicate annual filings by recency, amendment status, and accession."""
     return (
         reference.filed_at,
         reference.form == "10-K/A",

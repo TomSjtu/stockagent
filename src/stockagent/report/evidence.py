@@ -12,13 +12,18 @@ from stockagent.financials import SecFilingReference
 class EvidenceBundle(BaseModel):
     """The selected sources and inputs needed to audit one report."""
 
+    # 本次报告收集的网页 Evidence 与 SEC filing Evidence 列表
     evidence: list[Evidence] = Field(default_factory=list)
+    # Markdown 实际脚注使用的 Evidence.id 列表
     cited_evidence_ids: list[str] = Field(default_factory=list)
+    # valuation 工具实际使用的价格、市值、币种、日期和证据 ID
     market_inputs: MarketInputs = Field(default_factory=MarketInputs)
+    # 财务记录关联的年度 SEC filing 元数据列表
     financial_filings: list[SecFilingReference] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_cited_evidence_ids(self) -> Self:
+        """Enforce that every rendered citation refers to exactly one selected source."""
         evidence_ids = [item.id for item in self.evidence]
         selected_evidence_ids = set(evidence_ids)
         if len(evidence_ids) != len(selected_evidence_ids):
@@ -55,6 +60,7 @@ def serialize_sources(
     evidence_bundle: EvidenceBundle,
 ) -> str:
     """Serialize a report's audit sidecar without inventing missing values."""
+    # 用大写 ticker、传入日期和 evidence_bundle 字段创建 SourcesManifest，再序列化为缩进 JSON
     manifest = SourcesManifest(
         ticker=ticker.upper(),
         report_date=report_date,

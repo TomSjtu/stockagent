@@ -17,6 +17,7 @@ def run_stock_analysis_agent(
     years: int,
     llm_config: LLMConfig,
 ) -> GeneratedReport:
+    """Run the stock-analysis graph through the package's lazy-import boundary."""
     from stockagent.agents.orchestrator import (
         run_stock_analysis_agent as _run_stock_analysis_agent,
     )

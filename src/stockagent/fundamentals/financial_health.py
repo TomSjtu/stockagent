@@ -9,6 +9,7 @@ def compute_financial_health(fi: FinancialHealthInput) -> FinancialHealthMetrics
     """Compute financial health ratios from a single year's financial data."""
     metrics = FinancialHealthMetrics(fiscal_year=fi.fiscal_year)
 
+    # 将输入字段两两传给 safe_divide，依次写入五个财务健康比率
     metrics.equity_ratio = safe_divide(fi.shareholders_equity, fi.total_assets)
     metrics.liabilities_to_assets = safe_divide(fi.total_liabilities, fi.total_assets)
     metrics.current_ratio = safe_divide(fi.current_assets, fi.current_liabilities)

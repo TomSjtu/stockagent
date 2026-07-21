@@ -37,6 +37,7 @@ VALUATION_PROMPT = (
 
 
 def build_valuation_agent(model: BaseChatModel):
+    """Build the valuation agent with sourced market data and deterministic metrics."""
     return create_agent(
         model=model,
         tools=[web_search, compute_valuation_metrics],
