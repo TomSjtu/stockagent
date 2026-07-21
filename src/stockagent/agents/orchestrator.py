@@ -45,6 +45,8 @@ class AnalysisNodes:
 
 @dataclass(frozen=True)
 class GeneratedReport:
+    """一次分析生成的 Markdown 报告及其可审计证据包"""
+
     markdown: str
     evidence_bundle: EvidenceBundle
 

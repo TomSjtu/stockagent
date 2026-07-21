@@ -12,7 +12,9 @@ _UNKNOWN_INTERNAL_MARKER = r"[a-z][a-z0-9_]*-\d+"
 
 @dataclass(frozen=True)
 class CitationRenderResult:
+    # 将内部证据标记替换为脚注后的报告正文
     markdown: str
+    # 按正文首次引用顺序排列的证据 ID
     cited_evidence_ids: list[str]
 
 

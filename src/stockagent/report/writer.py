@@ -10,7 +10,11 @@ from stockagent.report.evidence import EvidenceBundle, serialize_sources
 
 @dataclass(frozen=True)
 class ReportArtifacts:
+    """一次报告生成所写入的交付文件路径"""
+
+    # 渲染完成的 Markdown 报告路径
     markdown_path: Path
+    # 与 Markdown 同名的证据审计 JSON 路径
     sources_path: Path
 
 

@@ -34,11 +34,17 @@ class EvidenceBundle(BaseModel):
 class SourcesManifest(BaseModel):
     """The JSON sidecar contract for one generated report."""
 
+    # 生成本报告的股票代码
     ticker: str
+    # 报告及同名审计文件使用的日期
     report_date: date
+    # 本次运行中所有被 Agent 选取的证据
     evidence: list[Evidence]
+    # 最终 Markdown 实际引用的证据 ID
     cited_evidence_ids: list[str]
+    # 实际传入估值计算的市场输入
     market_inputs: MarketInputs
+    # 本次财务窗口中各年度的 SEC filing 元数据
     financial_filings: list[SecFilingReference]
 
 
