@@ -1,6 +1,6 @@
 # StockAgent 架构说明
 
-> 本文描述当前 `refactor_langgraph` 分支中受版本控制的实现。它是面向维护者的架构与目录索引，不替代 [README](../README.md) 的安装和运行说明，也不把本地缓存、生成报告或未跟踪的设计草案当作正式架构的一部分。
+> 本文描述当前受版本控制的实现。它是面向维护者的架构与目录索引，不替代 [README](../README.md) 的安装和运行说明，也不把本地缓存、生成报告或未跟踪的设计草案当作正式架构的一部分。
 
 ## 1. 系统目标与边界
 
@@ -11,7 +11,8 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 3. 以纯 Python 计算基本面和估值指标；
 4. 使用 Tavily 搜索行业、市场和近期风险信息；
 5. 以 LangGraph 编排四个独立的 LLM 分析 Agent；
-6. 生成中文 Markdown，并由本地文件写入器保存报告。
+6. 生成带网页与年度 SEC 10-K 引用的中文 Markdown；
+7. 写入 Markdown 与同名 `sources.json` 审计附属文件。
 
 系统只支持 `openai:<model>` 格式的 LLM 配置。它不提供 Web 服务、数据库、长期记忆、checkpoint、异步/流式响应、质量重试或部分成功报告。
 
@@ -21,6 +22,7 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 命令行与交付层
   stock CLI
     -> cli.py -> app.py -> report/writer.py -> output/<TICKER>-<DATE>.md
+                                                output/<TICKER>-<DATE>.sources.json
                          |
                          v
 编排层（agents）
@@ -28,7 +30,7 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
     -> LangGraph StateGraph
        START ─┬─> industry ────────┐
               └─> fundamentals ────┴─> valuation -> risk -> synthesize -> END
-                         |                |            |
+                         |                |            |-> 内部标记 -> Markdown 脚注
                          |                |            +-> Tavily 搜索
                          |                +-> Tavily 搜索 + 确定性估值工具
                          +-> EDGAR + 确定性基本面工具
@@ -50,7 +52,7 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 | 编排 | `agents/` | LLM 构造、节点拓扑、提示词、结构化输出和失败传播 | 直接解析 EDGAR 表格、持久化报告 |
 | 工具适配 | `tools/` | 将搜索和确定性计算暴露给 Agent，统一为 JSON 文本工具结果 | 业务决策和跨节点状态 |
 | 应用/领域服务 | `api.py` | 取数、完整财年窗口校验、缓存、调用各指标计算 | LLM 提示词、HTTP 搜索 |
-| 数据适配 | `data/` | 把外部数据源转换为内部 `FinancialRecord` | 指标计算和报告生成 |
+| 数据适配 | `data/` | 把外部数据源转换为带可空 10-K 引用的 `FinancialRecord` | 指标计算和报告生成 |
 | 领域模型与计算 | `financials/`、`fundamentals/` | 财务记录、指标 DTO 与无副作用的公式 | 网络、环境变量、LLM |
 | 横切能力 | `config.py`、`errors.py`、`observability.py`、`llm.py` | 配置、错误边界、日志、模型客户端 | 业务流程编排 |
 | 验证 | `tests/` | 镜像生产模块，使用 fake/mocking 验证确定性行为 | 真实 LLM、EDGAR、Tavily 集成测试 |
@@ -62,23 +64,24 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 3. 应用层调用 `agents.run_stock_analysis_agent()`；包级入口延迟导入真正的 orchestrator，避免普通模块导入时初始化重型依赖。
 4. orchestrator 通过 `LLMConfig` 显式参数创建 `ChatOpenAI`，将四个 Agent builder 和汇总节点组装为 `AnalysisNodes`。
 5. `StateGraph` 以只有 `ticker`、`years` 的初始 State 启动。行业与基本面节点是两个起始分支；估值节点通过联合入边等待它们都返回。
-6. 行业、估值和风险 Agent 通过 `web_search()` 调用 Tavily；基本面和估值工具通过 `api.py` 读取 EDGAR 数据。
-7. 每个分析节点只把经 Pydantic 验证的局部输出写回 `AnalysisState`，不会把 LangChain 的完整 messages 放入主 State。
-8. 估值节点从成功的 `compute_valuation_metrics` 工具消息中解析 PE/PB/PS，检查 `ticker`、`years` 与 JSON 字段后覆盖模型抄写的数值。
-9. 风险节点消费前三项 typed output；汇总节点消费四项 output，要求模型生成完整 Markdown，写入 `final_report`。
-10. 应用层将 `final_report` 传给 `write_markdown_report()`，后者创建输出目录并写入 `TICKER-YYYY-MM-DD.md`。
+6. 行业、估值和风险 Agent 通过 `web_search()` 调用 Tavily；其 typed output 只保留实际采用的 `Evidence`，不会保存全部搜索结果。
+7. 基本面和估值工具通过 `api.py` 读取 EDGAR 数据。EDGAR Provider 为匹配的年度记录附加可空 `SecFilingReference`；缺失 filing 元数据只记录 warning，不阻断财务记录。
+8. 每个分析节点只把经 Pydantic 验证的局部 output 写回 `AnalysisState`，不会把 LangChain 的完整 messages 放入主 State。基本面节点从工具结果确定性提取 filing，估值节点从成功的 `compute_valuation_metrics` 消息覆盖 PE/PB/PS、价格和市值。
+9. 风险节点消费前三项 typed output；汇总节点消费四项 output，要求模型保留内部证据标记和年度数据口径，再用 `report.citations` 渲染 Markdown 脚注及实际引用 ID。
+10. `run_stock_analysis_agent()` 返回渲染后的 Markdown 与 `EvidenceBundle`。应用层以同一报告日期调用 `write_report_artifacts()`，写入 `TICKER-YYYY-MM-DD.md` 和 `TICKER-YYYY-MM-DD.sources.json`。
 
 ## 3. 关键设计与契约
 
 ### 3.1 确定性与生成式职责分离
 
 - EDGAR 记录归一化和所有财务公式在 `data/`、`api.py`、`financials/`、`fundamentals/` 中完成，均可不调用 LLM 测试。
-- LLM 负责搜索策略、叙事说明、来源汇集、同行对比、风险判断和最终报告写作。
+- LLM 负责搜索策略、叙事说明、来源选择、同行对比、风险判断和最终报告写作；它只能为实际采用的外部事实返回结构化证据和内部标记。
 - PE/PB/PS 属于确定性字段：即使估值 Agent 的结构化输出包含这些字段，orchestrator 仍只信任工具返回的计算结果。
+- 引用渲染是确定性的：有效内部标记按首次出现顺序成为全局脚注；未知标记记录 warning 后移除；未引用 evidence 只保留在 `sources.json`。
 
 ### 3.2 财务数据契约
 
-`FinancialRecord` 是外部财务数据进入领域层的唯一标准形状，覆盖利润表、资产负债表和现金流量表的核心年度字段。所有金额字段均允许为 `None`，以保留来源缺失事实；公式通过安全除法返回 `None`，而不是虚构数值。
+`FinancialRecord` 是外部财务数据进入领域层的唯一标准形状，覆盖利润表、资产负债表和现金流量表的核心年度字段。所有金额字段均允许为 `None`，以保留来源缺失事实；公式通过安全除法返回 `None`，而不是虚构数值。每个记录还可带 `SecFilingReference`，其中包含实际 10-K/10-K/A 的报告期、提交日、CIK、accession、主文档和 SEC Archive URL；未匹配到时该字段为 `None`，不改变计算接口。
 
 `api.fetch_financials()` 会将 ticker 规范化为大写，从缓存中取记录，并要求以最新财年为结尾的连续窗口恰好包含 `years` 个年度。数据缺年会抛出 `MissingFiscalYearsError`，不会缩短分析窗口。
 
@@ -88,11 +91,12 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 
 | State 字段 | 生产者 | 消费者 | 类型 |
 | --- | --- | --- | --- |
-| `industry` | 行业节点 | 估值、风险、汇总 | `IndustryOutput` |
-| `fundamentals` | 基本面节点 | 估值、风险、汇总 | `FundamentalsOutput` |
-| `valuation` | 估值节点 | 风险、汇总 | `ValuationOutput` |
-| `risk` | 风险节点 | 汇总 | `RiskOutput` |
-| `final_report` | 汇总节点 | `run_stock_analysis_agent()`、报告写入器 | 非空 Markdown 字符串 |
+| `industry` | 行业节点 | 估值、风险、汇总 | `IndustryOutput`，含已选网页 `evidence` |
+| `fundamentals` | 基本面节点 | 估值、风险、汇总 | `FundamentalsOutput`，含年度 `financial_filings` |
+| `valuation` | 估值节点 | 风险、汇总 | `ValuationOutput`，含 `evidence` 与实际市场输入 |
+| `risk` | 风险节点 | 汇总 | `RiskOutput`，含已选网页 `evidence` |
+| `final_report` | 汇总节点 | `run_stock_analysis_agent()`、报告写入器 | 已渲染引用的非空 Markdown |
+| `cited_evidence_ids` | 汇总节点 | `run_stock_analysis_agent()`、报告写入器 | Markdown 实际引用的稳定 ID 列表 |
 
 所有结构化 Agent 都配置 `ToolStrategy(OutputType, handle_errors=False)`。orchestrator 在接受输出前检查局部 `ToolMessage`：任何 `status == "error"`、缺失 `structured_response`、Pydantic 校验失败或估值工具合同不满足都会抛出 `AgentOutputError` 并终止 Graph。未知基础设施异常则分类为 `LLMTimeoutError` 或 `LLMResponseError`。
 
@@ -101,9 +105,9 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 | 外部系统 | 接入点 | 输入 | 输出/失败处理 |
 | --- | --- | --- | --- |
 | OpenAI 或兼容端点 | `llm.build_openai_model()` | `LLMConfig` | `ChatOpenAI`；原生 OpenAI 端点使用 Responses API，兼容代理不强制使用 |
-| SEC EDGAR | `EdgarFinancialsProvider` | ticker、years | 年度 `FinancialRecord`；外部异常包装为 provider 错误 |
-| Tavily | `tools.search.web_search()` | query、topic、时间范围 | 裁剪后的 JSON 搜索结果；缺 API key 抛出配置错误 |
-| 本地文件系统 | `report.writer` | ticker、Markdown、输出目录 | UTF-8 Markdown 文件 |
+| SEC EDGAR | `EdgarFinancialsProvider` | ticker、years | 年度 `FinancialRecord` 与可空 filing 引用；财务取数失败包装为 provider 错误，filing 元数据失败仅降级 |
+| Tavily | `tools.search.web_search()` | query、topic、时间范围 | 裁剪后的 JSON 搜索结果；Agent 只保存实际采用的结果，缺 API key 抛出配置错误 |
+| 本地文件系统 | `report.writer` | ticker、已渲染 Markdown、`EvidenceBundle`、输出目录 | UTF-8 Markdown 与同名 JSON 审计附属文件 |
 
 `api._fetch_financials_cached()` 以 `(normalized_ticker, years)` 为键，使用容量 32 的进程内 LRU 缓存。缓存位于 API 层，因此多个财务工具在同一进程内请求相同窗口时不会重复访问 EDGAR。
 
@@ -134,7 +138,7 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 | --- | --- | --- |
 | `src/stockagent/__init__.py` | 顶层包标记；当前没有公开业务 API。 | 使 `stockagent` 可作为包导入。 |
 | `src/stockagent/cli.py` | 定义 argparse 参数、正整数校验、日志初始化和进程级错误处理。 | 调用 `app.run_stock_analysis()`；使用 `RuntimeOptions` 和 `StockAgentError`。 |
-| `src/stockagent/app.py` | 应用服务入口，连接配置、Agent 报告生成和 Markdown 文件写入。 | 延迟导入 `agents` 与 `report.writer`，保持 CLI 到交付层的窄入口。 |
+| `src/stockagent/app.py` | 应用服务入口，连接配置、Agent 报告生成和双文件报告交付。 | 延迟导入 `agents` 与 `report.writer`，以同一报告日期写入 Markdown 和 JSON。 |
 | `src/stockagent/config.py` | 定义 `LLMConfig`、`RuntimeOptions`、默认模型/EDGAR identity、`.env` 加载和 OpenAI 环境变量映射。 | 被 CLI、应用层、LLM 工厂、API 和 orchestrator 使用。 |
 | `src/stockagent/errors.py` | 定义所有预期运行时错误的根类 `StockAgentError` 及 `ConfigurationError`。 | CLI 统一捕获；数据和 Agent 错误继承该根类。 |
 | `src/stockagent/llm.py` | 校验 `provider:model`，构建 `ChatOpenAI`，并区分原生 OpenAI 与兼容 base URL。 | 由 orchestrator 使用；依赖 `LLMConfig`。 |
@@ -146,14 +150,14 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 | 路径 | 作用 | 依赖与输出 |
 | --- | --- | --- |
 | `src/stockagent/agents/__init__.py` | 对外暴露稳定的 `run_stock_analysis_agent()`，并延迟导入实现。 | `app.py` 的唯一 Agent 包入口。 |
-| `src/stockagent/agents/state.py` | 定义四种 Pydantic Agent 输出及 `AnalysisState` TypedDict。 | Graph 节点间唯一业务数据合同。 |
+| `src/stockagent/agents/state.py` | 定义证据、市场输入、四种 Pydantic Agent output 及 `AnalysisState` TypedDict。 | Graph 节点间唯一业务数据合同。 |
 | `src/stockagent/agents/errors.py` | 定义 Agent 输出、超时和响应错误；将底层异常分类。 | orchestrator 的 fail-fast 错误边界。 |
 | `src/stockagent/agents/industry_agent.py` | 定义行业研究 prompt，构建仅含 `web_search` 的 structured Agent。 | 返回 `IndustryOutput`。 |
 | `src/stockagent/agents/fundamentals_agent.py` | 定义基本面 prompt，构建仅含聚合财务工具的 structured Agent。 | 调用 `get_fundamentals_analysis`，返回 `FundamentalsOutput`。 |
 | `src/stockagent/agents/valuation_agent.py` | 定义估值 prompt，构建搜索与估值计算工具 Agent。 | 返回 `ValuationOutput`；数值随后被 orchestrator 的工具结果校正。 |
 | `src/stockagent/agents/risk_agent.py` | 定义风险 prompt，构建仅含搜索工具的 structured Agent。 | 消费上游 State 后返回 `RiskOutput`。 |
 | `src/stockagent/agents/subagent_progress.py` | `AgentProgressCallbackHandler` 将固定 Agent 的工具开始、完成和失败事件映射为中文日志。 | 每次 Agent invoke 由 orchestrator 注入 callback。 |
-| `src/stockagent/agents/orchestrator.py` | 核心编排：定义 `AnalysisNodes`、Graph 拓扑、五个节点、输出校验、估值覆盖、报告提取和公开运行函数。 | 汇聚全部 Agent builder、State、模型、日志和错误模块。 |
+| `src/stockagent/agents/orchestrator.py` | 核心编排：定义 `AnalysisNodes`、Graph 拓扑、五个节点、确定性字段提取、证据聚合、引用渲染和公开运行函数。 | 汇聚全部 Agent builder、State、模型、报告证据模块、日志和错误模块。 |
 
 ### 4.5 `src/stockagent/tools/`：给 LLM 的能力适配器
 
@@ -171,14 +175,15 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 | `src/stockagent/data/errors.py` | 定义 provider 错误层级：无数据、缺失财年、限流、未配置和响应归一化失败。 | 继承全局 `StockAgentError`；API 与 EDGAR provider 抛出。 |
 | `src/stockagent/data/providers/__init__.py` | 集中导出 provider Protocol 和当前 EDGAR 实现。 | `api.py` 通过此公共入口实例化 provider。 |
 | `src/stockagent/data/providers/base.py` | `FinancialsProvider` Protocol，约束 `fetch_annual_records(ticker, years)`。 | 新数据源实现此接口后可替换/扩展。 |
-| `src/stockagent/data/providers/edgar.py` | 用 `edgartools.Company` 读取三张年报 DataFrame，按 XBRL concept 优先级映射字段，处理别名、重复行、空值、排序和异常包装。 | 输出 `FinancialRecord`；是当前唯一生产数据提供方。 |
+| `src/stockagent/data/providers/edgar.py` | 用 `edgartools.Company` 读取三张年报 DataFrame，按 XBRL concept 优先级映射字段，并为年度记录附加 filing 引用。 | 输出 `FinancialRecord`；是当前唯一生产数据提供方。 |
+| `src/stockagent/data/providers/edgar_filings.py` | 隔离 `edgartools` filing API，解析 10-K/10-K/A 元数据并构造 SEC Archive 主文档 URL。 | 由 `edgar.py` 通过可 fake resolver 调用；缺失元数据不会中断财务记录。 |
 
 ### 4.7 `src/stockagent/financials/`：财务领域模型
 
 | 路径 | 作用 | 关系 |
 | --- | --- | --- |
-| `src/stockagent/financials/__init__.py` | 导出所有财务记录与指标 dataclass。 | 领域计算、API、provider 和测试的稳定导入面。 |
-| `src/stockagent/financials/models.py` | 定义 `FinancialRecord` 及 Profitability、CashFlow、FinancialHealth、Growth、Valuation 五类指标结果。 | 外部数据归一化的终点，也是纯计算的输入/输出。 |
+| `src/stockagent/financials/__init__.py` | 导出财务记录、指标 dataclass 和 `SecFilingReference`。 | 领域计算、API、provider 和测试的稳定导入面。 |
+| `src/stockagent/financials/models.py` | 定义 `FinancialRecord`、`SecFilingReference` 及 Profitability、CashFlow、FinancialHealth、Growth、Valuation 五类指标结果。 | 外部数据归一化的终点，也是纯计算的输入/输出。 |
 
 ### 4.8 `src/stockagent/fundamentals/`：无副作用的指标计算
 
@@ -198,7 +203,9 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 | 路径 | 作用 | 关系 |
 | --- | --- | --- |
 | `src/stockagent/report/__init__.py` | 报告包标记；当前不导出符号。 | 保持交付模块命名空间。 |
-| `src/stockagent/report/writer.py` | 创建目标目录，以 UTF-8 写入 `TICKER-YYYY-MM-DD.md`，并记录开始/结束日志。 | 由 `app.py` 调用；不理解 LLM、财务数据或 State。 |
+| `src/stockagent/report/citations.py` | 将 `[industry-1]` 等内部标记按首次出现顺序渲染为全局 Markdown 脚注。 | 未知标记 warning 后移除；返回实际引用的证据 ID。 |
+| `src/stockagent/report/evidence.py` | 定义 `EvidenceBundle` 与 `sources.json` 序列化契约。 | 记录选取证据、市场输入、实际引用 ID 和年度 filing。 |
+| `src/stockagent/report/writer.py` | 创建目标目录，以 UTF-8 写入 Markdown 和同 stem 的 `.sources.json`。 | 由 `app.py` 调用；接收已渲染内容和证据包，不理解 LLM 或 Graph 拓扑。 |
 
 ### 4.10 `tests/`：验证层
 
@@ -214,15 +221,16 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 | `tests/test_financial_tools.py` | 财务工具 JSON 序列化、当前工具导出、估值市场输入与缺失原因。 |
 | `tests/test_search_tool.py` | Tavily 调用参数与裁剪后的搜索接口。 |
 | `tests/test_agent_builders.py` | 四个 Agent builder 的工具集合、prompt 和 `ToolStrategy` 输出合同。 |
-| `tests/test_agent_state.py` | Pydantic 输出模型、风险评级和 State 必填/可选字段。 |
+| `tests/test_agent_state.py` | Pydantic 输出模型、证据 ID 唯一性、市场输入、年度 filing、风险评级和 State 必填/可选字段。 |
 | `tests/test_analysis_graph.py` | 真实 Graph builder 的完整数据流与联合 fan-in 只执行一次。 |
-| `tests/test_analysis_nodes.py` | 节点局部更新、工具错误、结构化输出校验、估值覆盖和报告汇总。 |
+| `tests/test_analysis_nodes.py` | 节点局部更新、工具错误、结构化输出校验、估值/filing 确定性提取和引用报告汇总。 |
 | `tests/test_agent_progress.py` | 固定 Agent 的工具开始、完成、失败日志。 |
 | `tests/test_agent_errors.py` | Agent 错误类型、模型 provider 校验、Graph 异常分类和 OpenAI client 配置。 |
-| `tests/test_orchestrator_logging.py` | 公开 Agent runner 的 Graph 构建、初始 State 与最终报告校验。 |
+| `tests/test_orchestrator_logging.py` | 公开 Agent runner 的 Graph 构建、初始 State、最终报告和 SEC evidence bundle 校验。 |
 | `tests/data/__init__.py` | `tests.data` 测试包标记。 |
 | `tests/data/providers/__init__.py` | `tests.data.providers` 测试包标记。 |
-| `tests/data/providers/test_edgar.py` | XBRL 映射、概念别名/优先级、空值、重复概念、无期间和异常包装。 |
+| `tests/data/providers/test_edgar.py` | XBRL 映射、概念别名/优先级、空值、重复概念、无期间、异常包装和 filing 降级。 |
+| `tests/data/providers/test_edgar_filings.py` | fake filing resolver 的年度匹配、10-K/A 优先、缺失元数据与 SEC Archive URL。 |
 | `tests/fundamentals/__init__.py` | `tests.fundamentals` 测试包标记。 |
 | `tests/fundamentals/test_utils.py` | 安全除法与自由现金流的缺失值语义。 |
 | `tests/fundamentals/test_profitability.py` | 盈利能力输入投影、公式、缺失值与排序。 |
@@ -231,7 +239,9 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 | `tests/fundamentals/test_growth.py` | 增长输入投影、同比/CAGR、空序列和异常基数。 |
 | `tests/fundamentals/test_valuation.py` | 估值输入投影、PE 回退、市场输入约束和非正值处理。 |
 | `tests/report/__init__.py` | `tests.report` 测试包标记。 |
-| `tests/report/test_writer.py` | 输出目录创建、文件命名、内容写入和日志。 |
+| `tests/report/test_citations.py` | 脚注顺序、重复引用、未知标记、缺失日期、SEC 格式和普通 Markdown 链接保留。 |
+| `tests/report/test_evidence.py` | evidence bundle 一致性及 `sources.json` 的缺失值序列化。 |
+| `tests/report/test_writer.py` | 输出目录创建、同 stem 双文件命名、内容写入和日志。 |
 
 建议运行：
 
@@ -243,20 +253,20 @@ uv run python -m unittest discover -s tests -v
 
 ```text
 cli -> app -> agents ----------------------> tools -> api -> data/providers -> EDGAR
-            |                                 |       |
-            |                                 |       +-> financials + fundamentals
-            |                                 +-> Tavily
-            |
+            |   |                             |       |
+            |   |                             |       +-> financials + fundamentals
+            |   |                             +-> Tavily
+            |   +-> report/citations + report/evidence
             +-> config + llm + observability
 
-app -> report/writer
+app -> report/writer -> Markdown + sources.json
 
 financials <- data/providers
 financials <-> fundamentals (models are inputs/outputs; calculations never do I/O)
 tests -> every production layer, but production code never imports tests
 ```
 
-依赖方向的核心规则是：领域计算不能依赖 Agent、工具、配置、网络或文件系统；工具不能直接理解 Graph State；报告写入器只接受 Markdown；只有 orchestrator 知道 Agent 拓扑和跨 Agent 输出。
+依赖方向的核心规则是：领域计算不能依赖 Agent、工具、配置、网络或文件系统；工具不能直接理解 Graph State；报告写入器只接受已渲染 Markdown 与证据包；只有 orchestrator 知道 Agent 拓扑、跨 Agent 输出和引用聚合。
 
 ## 6. 当前存在但不属于正式源码树的目录
 
@@ -279,6 +289,10 @@ tests -> every production layer, but production code never imports tests
 ### 新增指标
 
 先在 `financials/models.py` 增加结果字段或新指标 dataclass；在 `fundamentals/inputs.py` 定义最小输入投影；再在独立纯函数模块实现计算，并由 `api.py` 选择性编排。需要暴露给 LLM 时，最后才在 `tools/financials.py` 添加 JSON 工具。
+
+### 调整证据与交付
+
+网页证据必须从 Agent 的 typed output 进入 orchestrator，不要把 LangChain 原始 messages 放入主 State。新增正文引用时复用稳定 evidence ID，由 `report.citations` 统一分配脚注编号；`sources.json` 必须由 `EvidenceBundle` 序列化，不能在 orchestrator 或 app 中手工拼接 JSON。年度财务来源通过 `FinancialRecord.filing` 进入基本面 output；缺失引用保留为缺失事实，不伪造 SEC URL。
 
 ### 新增 Agent 或 Graph 节点
 
