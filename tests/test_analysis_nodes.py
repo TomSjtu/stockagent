@@ -5,7 +5,7 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 
 from stockagent.agents.errors import AgentOutputError
 from stockagent.agents.orchestrator import build_analysis_nodes
@@ -18,6 +18,7 @@ from stockagent.agents.state import (
     ValuationOutput,
 )
 from stockagent.financials import SecFilingReference
+from stockagent.report.composer import AnnualFinancialSnapshot
 
 
 class FakeAgent:
@@ -36,6 +37,11 @@ class FakeModel:
     def __init__(self, result: object) -> None:
         self.result = result
         self.payload: object | None = None
+        self.output_type: type | None = None
+
+    def with_structured_output(self, output_type: type) -> FakeModel:
+        self.output_type = output_type
+        return self
 
     def invoke(self, payload: object) -> object:
         self.payload = payload
@@ -50,7 +56,10 @@ class AnalysisNodesTest(unittest.TestCase):
         fundamentals_result: object,
         valuation_result: object,
         risk_result: object,
-        synthesize_result: object = AIMessage(content="# Report"),
+        synthesize_result: object = {
+            "summary": "摘要",
+            "investment_recommendation": "投资建议",
+        },
     ) -> tuple[object, dict[str, FakeAgent], FakeModel]:
         agents = {
             "industry": FakeAgent(industry_result),
@@ -142,7 +151,7 @@ class AnalysisNodesTest(unittest.TestCase):
         with self.assertRaisesRegex(AgentOutputError, "missing structured_response"):
             nodes.industry({"ticker": "AAPL", "years": 3})
 
-    def test_fundamentals_node_uses_filings_from_deterministic_tool_result(self) -> None:
+    def test_fundamentals_node_uses_snapshot_from_deterministic_tool_result(self) -> None:
         filing = SecFilingReference(
             form="10-K",
             fiscal_year=2024,
@@ -165,10 +174,41 @@ class AnalysisNodesTest(unittest.TestCase):
                 "records": [
                     {
                         "fiscal_year": 2024,
+                        "revenue": 1_000_000_000.0,
+                        "net_income": 200_000_000.0,
+                        "operating_cash_flow": 300_000_000.0,
+                        "capex": 50_000_000.0,
                         "filing": filing.model_dump(mode="json"),
                     },
-                    {"fiscal_year": 2023, "filing": None},
+                    {
+                        "fiscal_year": 2023,
+                        "revenue": 800_000_000.0,
+                        "net_income": 100_000_000.0,
+                        "operating_cash_flow": 240_000_000.0,
+                        "capex": 40_000_000.0,
+                        "filing": None,
+                    },
                 ],
+                "profitability": {
+                    "2024": {
+                        "fiscal_year": 2024,
+                        "gross_margin": 0.6,
+                        "net_margin": 0.2,
+                    },
+                    "2023": {
+                        "fiscal_year": 2023,
+                        "gross_margin": 0.5,
+                        "net_margin": 0.125,
+                    },
+                },
+                "cash_flow": {
+                    "2024": {"fiscal_year": 2024, "free_cash_flow": 250_000_000.0},
+                    "2023": {"fiscal_year": 2023, "free_cash_flow": 200_000_000.0},
+                },
+                "growth": {
+                    "2024": {"fiscal_year": 2024, "revenue_growth": 0.25},
+                    "2023": {"fiscal_year": 2023, "revenue_growth": None},
+                },
             }
         )
         nodes, _agents, _model = self._build_nodes(
@@ -191,6 +231,33 @@ class AnalysisNodesTest(unittest.TestCase):
 
         self.assertEqual(result["fundamentals"].narrative, "fundamentals")
         self.assertEqual(result["fundamentals"].financial_filings, [filing])
+        self.assertEqual(
+            result["fundamentals"].annual_financials,
+            [
+                AnnualFinancialSnapshot(
+                    fiscal_year=2023,
+                    revenue=800_000_000.0,
+                    net_income=100_000_000.0,
+                    operating_cash_flow=240_000_000.0,
+                    capex=40_000_000.0,
+                    free_cash_flow=200_000_000.0,
+                    gross_margin=0.5,
+                    net_margin=0.125,
+                    revenue_growth=None,
+                ),
+                AnnualFinancialSnapshot(
+                    fiscal_year=2024,
+                    revenue=1_000_000_000.0,
+                    net_income=200_000_000.0,
+                    operating_cash_flow=300_000_000.0,
+                    capex=50_000_000.0,
+                    free_cash_flow=250_000_000.0,
+                    gross_margin=0.6,
+                    net_margin=0.2,
+                    revenue_growth=0.25,
+                ),
+            ],
+        )
 
     def test_valuation_node_uses_deterministic_tool_metrics(self) -> None:
         structured_output = ValuationOutput(
@@ -495,13 +562,16 @@ class AnalysisNodesTest(unittest.TestCase):
                 with self.assertRaises(AgentOutputError):
                     nodes.fundamentals({"ticker": "AAPL", "years": 3})
 
-    def test_synthesize_node_returns_markdown_from_model(self) -> None:
+    def test_synthesize_node_composes_report_from_structured_model_output(self) -> None:
         nodes, _agents, model = self._build_nodes(
             industry_result={},
             fundamentals_result={},
             valuation_result={},
             risk_result={},
-            synthesize_result=AIMessage(content="# Report\n\nNot investment advice."),
+            synthesize_result={
+                "summary": "摘要正文",
+                "investment_recommendation": "投资建议正文",
+            },
         )
         state = {
             "ticker": "AAPL",
@@ -530,22 +600,19 @@ class AnalysisNodesTest(unittest.TestCase):
 
         result = nodes.synthesize(state)
 
-        self.assertEqual(
-            result,
-            {
-                "final_report": "# Report\n\nNot investment advice.",
-                "cited_evidence_ids": [],
-            },
-        )
+        self.assertIn("# AAPL 研究报告", result["final_report"])
+        self.assertIn("## 摘要\n\n摘要正文", result["final_report"])
+        self.assertIn("## 行业分析\n\nindustry", result["final_report"])
+        self.assertIn("## 投资建议\n\n投资建议正文", result["final_report"])
+        self.assertIn("## 数据口径", result["final_report"])
+        self.assertIn("## 免责声明", result["final_report"])
+        self.assertEqual(result["cited_evidence_ids"], [])
+        self.assertIsNotNone(model.output_type)
         self.assertIn("30.0", model.payload[0]["content"])
-        self.assertIn("不得自行重新计算", model.payload[0]["content"])
-        self.assertIn("保留", model.payload[0]["content"])
+        self.assertIn("只生成摘要和投资建议", model.payload[0]["content"])
+        self.assertIn("不得自行发明", model.payload[0]["content"])
         self.assertIn("[industry-1]", model.payload[0]["content"])
         self.assertIn("[sec-", model.payload[0]["content"])
-        self.assertIn(
-            "财务数据仅覆盖最近可得年度 10-K，未纳入最新 10-Q 与 TTM",
-            model.payload[0]["content"],
-        )
 
     def test_synthesize_node_renders_citations_and_records_cited_evidence(self) -> None:
         nodes, _agents, _model = self._build_nodes(
@@ -553,13 +620,16 @@ class AnalysisNodesTest(unittest.TestCase):
             fundamentals_result={},
             valuation_result={},
             risk_result={},
-            synthesize_result=AIMessage(content="行业事实[industry-1]。"),
+            synthesize_result={
+                "summary": "摘要正文",
+                "investment_recommendation": "投资建议正文",
+            },
         )
         state = {
             "ticker": "AAPL",
             "years": 3,
             "industry": IndustryOutput(
-                narrative="industry",
+                narrative="行业事实[industry-1]。",
                 evidence=[
                     Evidence(
                         id="industry-1",
@@ -592,17 +662,13 @@ class AnalysisNodesTest(unittest.TestCase):
 
         result = nodes.synthesize(state)
 
-        self.assertEqual(
-            result,
-            {
-                "final_report": (
-                    "行业事实[^1]。\n\n## 参考来源\n\n"
-                    "[^1]: Example News｜Industry source｜"
-                    "https://example.test/industry\n"
-                ),
-                "cited_evidence_ids": ["industry-1"],
-            },
+        self.assertIn("## 行业分析\n\n行业事实[^1]。", result["final_report"])
+        self.assertIn("## 参考来源\n\n", result["final_report"])
+        self.assertIn(
+            "[^1]: Example News｜Industry source｜https://example.test/industry",
+            result["final_report"],
         )
+        self.assertEqual(result["cited_evidence_ids"], ["industry-1"])
 
 
 if __name__ == "__main__":
