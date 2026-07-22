@@ -18,6 +18,7 @@ from stockagent.agents.state import (
     ValuationOutput,
 )
 from stockagent.financials import SecFilingReference
+from stockagent.report.composer import AnnualFinancialSnapshot
 
 
 class FakeAgent:
@@ -142,7 +143,7 @@ class AnalysisNodesTest(unittest.TestCase):
         with self.assertRaisesRegex(AgentOutputError, "missing structured_response"):
             nodes.industry({"ticker": "AAPL", "years": 3})
 
-    def test_fundamentals_node_uses_filings_from_deterministic_tool_result(self) -> None:
+    def test_fundamentals_node_uses_snapshot_from_deterministic_tool_result(self) -> None:
         filing = SecFilingReference(
             form="10-K",
             fiscal_year=2024,
@@ -165,10 +166,41 @@ class AnalysisNodesTest(unittest.TestCase):
                 "records": [
                     {
                         "fiscal_year": 2024,
+                        "revenue": 1_000_000_000.0,
+                        "net_income": 200_000_000.0,
+                        "operating_cash_flow": 300_000_000.0,
+                        "capex": 50_000_000.0,
                         "filing": filing.model_dump(mode="json"),
                     },
-                    {"fiscal_year": 2023, "filing": None},
+                    {
+                        "fiscal_year": 2023,
+                        "revenue": 800_000_000.0,
+                        "net_income": 100_000_000.0,
+                        "operating_cash_flow": 240_000_000.0,
+                        "capex": 40_000_000.0,
+                        "filing": None,
+                    },
                 ],
+                "profitability": {
+                    "2024": {
+                        "fiscal_year": 2024,
+                        "gross_margin": 0.6,
+                        "net_margin": 0.2,
+                    },
+                    "2023": {
+                        "fiscal_year": 2023,
+                        "gross_margin": 0.5,
+                        "net_margin": 0.125,
+                    },
+                },
+                "cash_flow": {
+                    "2024": {"fiscal_year": 2024, "free_cash_flow": 250_000_000.0},
+                    "2023": {"fiscal_year": 2023, "free_cash_flow": 200_000_000.0},
+                },
+                "growth": {
+                    "2024": {"fiscal_year": 2024, "revenue_growth": 0.25},
+                    "2023": {"fiscal_year": 2023, "revenue_growth": None},
+                },
             }
         )
         nodes, _agents, _model = self._build_nodes(
@@ -191,6 +223,33 @@ class AnalysisNodesTest(unittest.TestCase):
 
         self.assertEqual(result["fundamentals"].narrative, "fundamentals")
         self.assertEqual(result["fundamentals"].financial_filings, [filing])
+        self.assertEqual(
+            result["fundamentals"].annual_financials,
+            [
+                AnnualFinancialSnapshot(
+                    fiscal_year=2023,
+                    revenue=800_000_000.0,
+                    net_income=100_000_000.0,
+                    operating_cash_flow=240_000_000.0,
+                    capex=40_000_000.0,
+                    free_cash_flow=200_000_000.0,
+                    gross_margin=0.5,
+                    net_margin=0.125,
+                    revenue_growth=None,
+                ),
+                AnnualFinancialSnapshot(
+                    fiscal_year=2024,
+                    revenue=1_000_000_000.0,
+                    net_income=200_000_000.0,
+                    operating_cash_flow=300_000_000.0,
+                    capex=50_000_000.0,
+                    free_cash_flow=250_000_000.0,
+                    gross_margin=0.6,
+                    net_margin=0.2,
+                    revenue_growth=0.25,
+                ),
+            ],
+        )
 
     def test_valuation_node_uses_deterministic_tool_metrics(self) -> None:
         structured_output = ValuationOutput(

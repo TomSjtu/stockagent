@@ -31,6 +31,7 @@ from stockagent.financials import SecFilingReference
 from stockagent.llm import build_model
 from stockagent.observability import get_logger
 from stockagent.report.citations import render_citations
+from stockagent.report.composer import AnnualFinancialSnapshot
 from stockagent.report.evidence import EvidenceBundle
 
 
@@ -124,12 +125,13 @@ def _build_fundamentals_node(agent: Any) -> StateNode:
             ),
             output_type=FundamentalsOutput,
         )
-        # 从本节点工具消息提取 filing，并写回 fundamentals.financial_filings
+        # 从本节点工具消息提取年度快照和 filing，并写回 fundamentals 输出
         return {
-            "fundamentals": _apply_deterministic_fundamentals_filings(
+            "fundamentals": _apply_deterministic_fundamentals_snapshot(
                 output,
                 messages,
                 ticker=state["ticker"],
+                years=state["years"],
             )
         }
 
@@ -364,13 +366,14 @@ def _apply_deterministic_valuation_metrics(
         raise AgentOutputError("compute_valuation_metrics returned invalid metrics") from exc
 
 
-def _apply_deterministic_fundamentals_filings(
+def _apply_deterministic_fundamentals_snapshot(
     output: FundamentalsOutput,
     messages: list[Any],
     *,
     ticker: str,
+    years: int,
 ) -> FundamentalsOutput:
-    """Extract audited filing references from the deterministic fundamentals tool."""
+    """Extract annual report facts and filing references from one tool result."""
     tool_message = next(
         (
             message
@@ -399,12 +402,54 @@ def _apply_deterministic_fundamentals_filings(
     records = payload.get("records")
     if not isinstance(records, list):
         raise AgentOutputError("get_fundamentals_analysis returned invalid records")
+    if len(records) != years:
+        raise AgentOutputError("get_fundamentals_analysis returned mismatched years")
 
-    # 遍历工具返回的 records，将 fiscal_year 相同的 filing 转为 SecFilingReference 列表
     financial_filings: list[SecFilingReference] = []
+    annual_financials: list[AnnualFinancialSnapshot] = []
+    fiscal_years: list[int] = []
     for record in records:
         if not isinstance(record, Mapping):
             raise AgentOutputError("get_fundamentals_analysis returned invalid record")
+
+        fiscal_year = _fiscal_year(record, source="record")
+        profitability = _metrics_for_fiscal_year(payload, "profitability", fiscal_year)
+        cash_flow = _metrics_for_fiscal_year(payload, "cash_flow", fiscal_year)
+        growth = _metrics_for_fiscal_year(payload, "growth", fiscal_year)
+        annual_financials.append(
+            AnnualFinancialSnapshot(
+                fiscal_year=fiscal_year,
+                revenue=_optional_number(record, "revenue", source="record"),
+                net_income=_optional_number(record, "net_income", source="record"),
+                operating_cash_flow=_optional_number(
+                    record,
+                    "operating_cash_flow",
+                    source="record",
+                ),
+                capex=_optional_number(record, "capex", source="record"),
+                free_cash_flow=_optional_number(
+                    cash_flow,
+                    "free_cash_flow",
+                    source="cash_flow metrics",
+                ),
+                gross_margin=_optional_number(
+                    profitability,
+                    "gross_margin",
+                    source="profitability metrics",
+                ),
+                net_margin=_optional_number(
+                    profitability,
+                    "net_margin",
+                    source="profitability metrics",
+                ),
+                revenue_growth=_optional_number(
+                    growth,
+                    "revenue_growth",
+                    source="growth metrics",
+                ),
+            )
+        )
+        fiscal_years.append(fiscal_year)
 
         filing_payload = record.get("filing")
         if filing_payload is None:
@@ -417,16 +462,76 @@ def _apply_deterministic_fundamentals_filings(
         except ValidationError as exc:
             raise AgentOutputError("get_fundamentals_analysis returned invalid filing") from exc
 
-        if record.get("fiscal_year") != filing.fiscal_year:
+        if fiscal_year != filing.fiscal_year:
             raise AgentOutputError("get_fundamentals_analysis returned mismatched filing")
         financial_filings.append(filing)
+
+    if len(set(fiscal_years)) != years:
+        raise AgentOutputError("get_fundamentals_analysis returned invalid fiscal years")
+    if sorted(fiscal_years) != list(range(min(fiscal_years), max(fiscal_years) + 1)):
+        raise AgentOutputError("get_fundamentals_analysis returned non-contiguous fiscal years")
+    annual_financials.sort(key=lambda snapshot: snapshot.fiscal_year)
+    financial_filings.sort(key=lambda filing: filing.fiscal_year)
 
     return FundamentalsOutput.model_validate(
         {
             **output.model_dump(),
             "financial_filings": financial_filings,
+            "annual_financials": annual_financials,
         }
     )
+
+
+def _metrics_for_fiscal_year(
+    payload: Mapping[str, object],
+    metric_name: str,
+    fiscal_year: int,
+) -> Mapping[str, object]:
+    """Return one annual metrics record after checking its matching fiscal year."""
+    metrics_by_year = payload.get(metric_name)
+    if not isinstance(metrics_by_year, Mapping):
+        raise AgentOutputError(
+            f"get_fundamentals_analysis returned invalid {metric_name} metrics"
+        )
+    metrics = metrics_by_year.get(str(fiscal_year))
+    if not isinstance(metrics, Mapping):
+        raise AgentOutputError(
+            f"get_fundamentals_analysis omitted {metric_name} metrics for {fiscal_year}"
+        )
+    if _fiscal_year(metrics, source=f"{metric_name} metrics") != fiscal_year:
+        raise AgentOutputError(
+            f"get_fundamentals_analysis returned mismatched {metric_name} metrics"
+        )
+    return metrics
+
+
+def _fiscal_year(payload: Mapping[str, object], *, source: str) -> int:
+    """Return a valid fiscal-year label from one deterministic payload object."""
+    fiscal_year = payload.get("fiscal_year")
+    if isinstance(fiscal_year, bool) or not isinstance(fiscal_year, int):
+        raise AgentOutputError(f"get_fundamentals_analysis returned invalid {source}")
+    return fiscal_year
+
+
+def _optional_number(
+    payload: Mapping[str, object],
+    field_name: str,
+    *,
+    source: str,
+) -> float | None:
+    """Return a nullable numeric tool field without inventing a missing value."""
+    if field_name not in payload:
+        raise AgentOutputError(
+            f"get_fundamentals_analysis omitted {field_name} from {source}"
+        )
+    value = payload[field_name]
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise AgentOutputError(
+            f"get_fundamentals_analysis returned invalid {field_name} in {source}"
+        )
+    return float(value)
 
 
 def _extract_markdown(response: object) -> str:
