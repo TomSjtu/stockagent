@@ -31,3 +31,8 @@ select = ["I"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["stockagent"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
