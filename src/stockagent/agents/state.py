@@ -70,8 +70,6 @@ class FundamentalsOutput(BaseModel):
 
     # 基本面 Agent 生成的中文 Markdown 片段，可包含 [sec-*] 证据标记
     narrative: str
-    # Agent 输出的指标名称到数值的映射，用于报告中的重点展示
-    key_metrics: dict[str, float | None]
     # Agent 输出的基本面关注点列表
     concerns: list[str]
     # 从 get_fundamentals_analysis 工具 records 提取的年度 SEC filing 列表
@@ -85,12 +83,13 @@ class ValuationOutput(EvidenceOutput):
 
     # 估值 Agent 生成的中文 Markdown 片段，可包含 [valuation-*] 证据标记
     narrative: str
+    # LLM 可在生成阶段省略这些值，节点完成时会由确定性工具结果无条件覆盖。
     # compute_valuation_metrics 返回的市盈率，工具不可计算时为 None
-    pe_ratio: float | None
+    pe_ratio: float | None = None
     # compute_valuation_metrics 返回的市净率，工具不可计算时为 None
-    pb_ratio: float | None
+    pb_ratio: float | None = None
     # compute_valuation_metrics 返回的市销率，工具不可计算时为 None
-    ps_ratio: float | None
+    ps_ratio: float | None = None
     # 传给 compute_valuation_metrics 的市场输入及其 Evidence ID
     market_inputs: MarketInputs = Field(default_factory=MarketInputs)
 

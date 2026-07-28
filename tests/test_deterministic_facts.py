@@ -50,7 +50,6 @@ class DeterministicFactsTest(unittest.TestCase):
         self.assertEqual(output, original)
         self.assertEqual(result.narrative, "基本面叙事")
         self.assertEqual(result.concerns, ["收入增速放缓"])
-        self.assertEqual(result.key_metrics, {"llm_metric": 999.0})
         self.assertEqual(result.financial_filings, [filing])
         self.assertEqual(
             result.annual_financials,
@@ -437,7 +436,6 @@ class DeterministicFactsTest(unittest.TestCase):
     def _fundamentals_output() -> FundamentalsOutput:
         return FundamentalsOutput(
             narrative="基本面叙事",
-            key_metrics={"llm_metric": 999.0},
             concerns=["收入增速放缓"],
             financial_filings=[
                 DeterministicFactsTest._filing(2022),
