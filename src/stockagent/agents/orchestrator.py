@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
@@ -13,6 +12,10 @@ from langgraph.graph.state import StateNode
 from pydantic import BaseModel, ValidationError
 
 from stockagent.agents.errors import AgentOutputError, classify_llm_error
+from stockagent.agents.facts import (
+    apply_fundamentals_facts,
+    apply_valuation_facts,
+)
 from stockagent.agents.fundamentals_agent import build_fundamentals_agent
 from stockagent.agents.industry_agent import build_industry_agent
 from stockagent.agents.risk_agent import build_risk_agent
@@ -32,11 +35,7 @@ from stockagent.financials import SecFilingReference
 from stockagent.llm import build_model
 from stockagent.observability import get_logger
 from stockagent.report.citations import render_citations
-from stockagent.report.composer import (
-    AnnualFinancialSnapshot,
-    ReportComposer,
-    ReportContent,
-)
+from stockagent.report.composer import ReportComposer, ReportContent
 from stockagent.report.evidence import EvidenceBundle
 
 
@@ -139,13 +138,18 @@ def _build_fundamentals_node(agent: Any) -> StateNode:
             ),
             output_type=FundamentalsOutput,
         )
-        # 从本节点工具消息提取年度快照和 filing，并写回 fundamentals 输出
+        # 编排层只处理 LangChain 消息；工具 JSON 的校验和事实投影由 facts module 负责。
+        tool_content = _extract_tool_content(
+            messages,
+            tool_name="get_fundamentals_analysis",
+            agent_name="fundamentals_analyst",
+        )
         return {
-            "fundamentals": _apply_deterministic_fundamentals_snapshot(
+            "fundamentals": apply_fundamentals_facts(
                 output,
-                messages,
-                ticker=state["ticker"],
-                years=state["years"],
+                tool_content,
+                expected_ticker=state["ticker"],
+                expected_years=state["years"],
             )
         }
 
@@ -166,13 +170,18 @@ def _build_valuation_node(agent: Any) -> StateNode:
             ),
             output_type=ValuationOutput,
         )
-        # 将工具返回的 PE、PB、PS、price 和 market_cap 写入 valuation 输出
+        # 未经 facts module 覆盖的 LLM 估值字段不得写入 AnalysisState。
+        tool_content = _extract_tool_content(
+            messages,
+            tool_name="compute_valuation_metrics",
+            agent_name="valuation_analyst",
+        )
         return {
-            "valuation": _apply_deterministic_valuation_metrics(
+            "valuation": apply_valuation_facts(
                 output,
-                messages,
-                ticker=state["ticker"],
-                years=state["years"],
+                tool_content,
+                expected_ticker=state["ticker"],
+                expected_years=state["years"],
             )
         }
 
@@ -317,250 +326,29 @@ def _extract_structured_response(
     return output, messages
 
 
-def _apply_deterministic_valuation_metrics(
-    output: ValuationOutput,
+def _extract_tool_content(
     messages: list[Any],
     *,
-    ticker: str,
-    years: int,
-) -> ValuationOutput:
-    """Replace LLM valuation facts with the matching deterministic tool payload."""
-    # 在本节点消息中找到最近一次成功的 compute_valuation_metrics 工具调用
+    tool_name: str,
+    agent_name: str,
+) -> str:
+    """Return the latest successful text result for one tool."""
+    # Agent 可修正后再次调用同一工具，最后一次成功结果才是当前权威输入。
     tool_message = next(
         (
             message
             for message in reversed(messages)
             if isinstance(message, ToolMessage)
-            and message.name == "compute_valuation_metrics"
+            and message.name == tool_name
             and message.status == "success"
         ),
         None,
     )
     if tool_message is None:
-        raise AgentOutputError("valuation_analyst did not call compute_valuation_metrics")
+        raise AgentOutputError(f"{agent_name} did not call {tool_name}")
     if not isinstance(tool_message.content, str):
-        raise AgentOutputError("compute_valuation_metrics returned non-text JSON")
-
-    # 解析工具 JSON，并校验其中的 ticker、years、估值字段和市场输入字段
-    try:
-        payload = json.loads(tool_message.content)
-    except json.JSONDecodeError as exc:
-        raise AgentOutputError(
-            "compute_valuation_metrics returned invalid JSON"
-        ) from exc
-
-    if not isinstance(payload, Mapping):
-        raise AgentOutputError("compute_valuation_metrics returned a non-object payload")
-    if payload.get("ticker") != ticker.upper():
-        raise AgentOutputError("compute_valuation_metrics returned a mismatched ticker")
-    if payload.get("years") != years:
-        raise AgentOutputError("compute_valuation_metrics returned mismatched years")
-
-    valuation = payload.get("valuation")
-    if not isinstance(valuation, Mapping):
-        raise AgentOutputError("compute_valuation_metrics returned invalid valuation data")
-
-    metric_names = ("pe_ratio", "pb_ratio", "ps_ratio")
-    if any(metric_name not in valuation for metric_name in metric_names):
-        raise AgentOutputError("compute_valuation_metrics omitted a valuation metric")
-
-    tool_market_inputs = payload.get("market_inputs")
-    if not isinstance(tool_market_inputs, Mapping):
-        raise AgentOutputError("compute_valuation_metrics returned invalid market inputs")
-    market_input_names = ("price", "market_cap")
-    if any(input_name not in tool_market_inputs for input_name in market_input_names):
-        raise AgentOutputError("compute_valuation_metrics omitted a market input")
-
-    evidence_id = output.market_inputs.evidence_id
-    if evidence_id is not None and evidence_id not in {
-        evidence.id for evidence in output.evidence
-    }:
-        raise AgentOutputError("valuation_analyst returned an unknown market evidence ID")
-
-    try:
-        return ValuationOutput.model_validate(
-            {
-                **output.model_dump(),
-                **{metric_name: valuation[metric_name] for metric_name in metric_names},
-                "market_inputs": {
-                    **output.market_inputs.model_dump(),
-                    **{
-                        input_name: tool_market_inputs[input_name]
-                        for input_name in market_input_names
-                    },
-                },
-            }
-        )
-    except ValidationError as exc:
-        raise AgentOutputError("compute_valuation_metrics returned invalid metrics") from exc
-
-
-def _apply_deterministic_fundamentals_snapshot(
-    output: FundamentalsOutput,
-    messages: list[Any],
-    *,
-    ticker: str,
-    years: int,
-) -> FundamentalsOutput:
-    """Extract annual report facts and filing references from one tool result."""
-    tool_message = next(
-        (
-            message
-            for message in reversed(messages)
-            if isinstance(message, ToolMessage)
-            and message.name == "get_fundamentals_analysis"
-            and message.status == "success"
-        ),
-        None,
-    )
-    if tool_message is None:
-        raise AgentOutputError("fundamentals_analyst did not call get_fundamentals_analysis")
-    if not isinstance(tool_message.content, str):
-        raise AgentOutputError("get_fundamentals_analysis returned non-text JSON")
-
-    try:
-        payload = json.loads(tool_message.content)
-    except json.JSONDecodeError as exc:
-        raise AgentOutputError("get_fundamentals_analysis returned invalid JSON") from exc
-
-    if not isinstance(payload, Mapping):
-        raise AgentOutputError("get_fundamentals_analysis returned a non-object payload")
-    if payload.get("ticker") != ticker.upper():
-        raise AgentOutputError("get_fundamentals_analysis returned a mismatched ticker")
-
-    records = payload.get("records")
-    if not isinstance(records, list):
-        raise AgentOutputError("get_fundamentals_analysis returned invalid records")
-    if len(records) != years:
-        raise AgentOutputError("get_fundamentals_analysis returned mismatched years")
-
-    financial_filings: list[SecFilingReference] = []
-    annual_financials: list[AnnualFinancialSnapshot] = []
-    fiscal_years: list[int] = []
-    for record in records:
-        if not isinstance(record, Mapping):
-            raise AgentOutputError("get_fundamentals_analysis returned invalid record")
-
-        fiscal_year = _fiscal_year(record, source="record")
-        profitability = _metrics_for_fiscal_year(payload, "profitability", fiscal_year)
-        cash_flow = _metrics_for_fiscal_year(payload, "cash_flow", fiscal_year)
-        growth = _metrics_for_fiscal_year(payload, "growth", fiscal_year)
-        annual_financials.append(
-            AnnualFinancialSnapshot(
-                fiscal_year=fiscal_year,
-                revenue=_optional_number(record, "revenue", source="record"),
-                net_income=_optional_number(record, "net_income", source="record"),
-                operating_cash_flow=_optional_number(
-                    record,
-                    "operating_cash_flow",
-                    source="record",
-                ),
-                capex=_optional_number(record, "capex", source="record"),
-                free_cash_flow=_optional_number(
-                    cash_flow,
-                    "free_cash_flow",
-                    source="cash_flow metrics",
-                ),
-                gross_margin=_optional_number(
-                    profitability,
-                    "gross_margin",
-                    source="profitability metrics",
-                ),
-                net_margin=_optional_number(
-                    profitability,
-                    "net_margin",
-                    source="profitability metrics",
-                ),
-                revenue_growth=_optional_number(
-                    growth,
-                    "revenue_growth",
-                    source="growth metrics",
-                ),
-            )
-        )
-        fiscal_years.append(fiscal_year)
-
-        filing_payload = record.get("filing")
-        if filing_payload is None:
-            continue
-        if not isinstance(filing_payload, Mapping):
-            raise AgentOutputError("get_fundamentals_analysis returned invalid filing")
-
-        try:
-            filing = SecFilingReference.model_validate(filing_payload)
-        except ValidationError as exc:
-            raise AgentOutputError("get_fundamentals_analysis returned invalid filing") from exc
-
-        if fiscal_year != filing.fiscal_year:
-            raise AgentOutputError("get_fundamentals_analysis returned mismatched filing")
-        financial_filings.append(filing)
-
-    if len(set(fiscal_years)) != years:
-        raise AgentOutputError("get_fundamentals_analysis returned invalid fiscal years")
-    if sorted(fiscal_years) != list(range(min(fiscal_years), max(fiscal_years) + 1)):
-        raise AgentOutputError("get_fundamentals_analysis returned non-contiguous fiscal years")
-    annual_financials.sort(key=lambda snapshot: snapshot.fiscal_year)
-    financial_filings.sort(key=lambda filing: filing.fiscal_year)
-
-    return FundamentalsOutput.model_validate(
-        {
-            **output.model_dump(),
-            "financial_filings": financial_filings,
-            "annual_financials": annual_financials,
-        }
-    )
-
-
-def _metrics_for_fiscal_year(
-    payload: Mapping[str, object],
-    metric_name: str,
-    fiscal_year: int,
-) -> Mapping[str, object]:
-    """Return one annual metrics record after checking its matching fiscal year."""
-    metrics_by_year = payload.get(metric_name)
-    if not isinstance(metrics_by_year, Mapping):
-        raise AgentOutputError(
-            f"get_fundamentals_analysis returned invalid {metric_name} metrics"
-        )
-    metrics = metrics_by_year.get(str(fiscal_year))
-    if not isinstance(metrics, Mapping):
-        raise AgentOutputError(
-            f"get_fundamentals_analysis omitted {metric_name} metrics for {fiscal_year}"
-        )
-    if _fiscal_year(metrics, source=f"{metric_name} metrics") != fiscal_year:
-        raise AgentOutputError(
-            f"get_fundamentals_analysis returned mismatched {metric_name} metrics"
-        )
-    return metrics
-
-
-def _fiscal_year(payload: Mapping[str, object], *, source: str) -> int:
-    """Return a valid fiscal-year label from one deterministic payload object."""
-    fiscal_year = payload.get("fiscal_year")
-    if isinstance(fiscal_year, bool) or not isinstance(fiscal_year, int):
-        raise AgentOutputError(f"get_fundamentals_analysis returned invalid {source}")
-    return fiscal_year
-
-
-def _optional_number(
-    payload: Mapping[str, object],
-    field_name: str,
-    *,
-    source: str,
-) -> float | None:
-    """Return a nullable numeric tool field without inventing a missing value."""
-    if field_name not in payload:
-        raise AgentOutputError(
-            f"get_fundamentals_analysis omitted {field_name} from {source}"
-        )
-    value = payload[field_name]
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise AgentOutputError(
-            f"get_fundamentals_analysis returned invalid {field_name} in {source}"
-        )
-    return float(value)
+        raise AgentOutputError(f"{tool_name} returned non-text JSON")
+    return tool_message.content
 
 
 def _extract_synthesis_output(response: object) -> SynthesisOutput:

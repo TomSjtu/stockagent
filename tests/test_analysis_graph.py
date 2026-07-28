@@ -37,7 +37,6 @@ class AnalysisGraphTest(unittest.TestCase):
             return {
                 "fundamentals": FundamentalsOutput(
                     narrative=f"{state['years']} years fundamentals",
-                    key_metrics={"revenue_growth": 0.12},
                     concerns=[],
                 )
             }
@@ -128,7 +127,6 @@ class AnalysisGraphTest(unittest.TestCase):
             return {
                 "fundamentals": FundamentalsOutput(
                     narrative="fundamentals",
-                    key_metrics={},
                     concerns=[],
                 )
             }
@@ -200,7 +198,6 @@ class ReportCompositionFlowTest(unittest.TestCase):
             return {
                 "fundamentals": FundamentalsOutput(
                     narrative="基本面正文 [sec-2024]",
-                    key_metrics={},
                     concerns=[],
                     annual_financials=[
                         AnnualFinancialSnapshot(

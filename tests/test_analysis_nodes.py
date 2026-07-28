@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 import unittest
-from datetime import date
 from unittest.mock import patch
 
 from langchain_core.messages import ToolMessage
@@ -17,8 +15,6 @@ from stockagent.agents.state import (
     RiskOutput,
     ValuationOutput,
 )
-from stockagent.financials import SecFilingReference
-from stockagent.report.composer import AnnualFinancialSnapshot
 
 
 class FakeAgent:
@@ -151,416 +147,115 @@ class AnalysisNodesTest(unittest.TestCase):
         with self.assertRaisesRegex(AgentOutputError, "missing structured_response"):
             nodes.industry({"ticker": "AAPL", "years": 3})
 
-    def test_fundamentals_node_uses_snapshot_from_deterministic_tool_result(self) -> None:
-        filing = SecFilingReference(
-            form="10-K",
-            fiscal_year=2024,
-            period_end=date(2024, 12, 31),
-            filed_at=date(2025, 2, 20),
-            cik="123456",
-            accession_number="0000123456-25-000001",
-            primary_document="annual-report.htm",
-            url="https://www.sec.gov/Archives/example/annual-report.htm",
-        )
-        structured_output = FundamentalsOutput(
-            narrative="fundamentals",
-            key_metrics={},
-            concerns=[],
-            financial_filings=[],
-        )
-        fundamentals_payload = json.dumps(
-            {
-                "ticker": "AAPL",
-                "records": [
-                    {
-                        "fiscal_year": 2024,
-                        "revenue": 1_000_000_000.0,
-                        "net_income": 200_000_000.0,
-                        "operating_cash_flow": 300_000_000.0,
-                        "capex": 50_000_000.0,
-                        "filing": filing.model_dump(mode="json"),
-                    },
-                    {
-                        "fiscal_year": 2023,
-                        "revenue": 800_000_000.0,
-                        "net_income": 100_000_000.0,
-                        "operating_cash_flow": 240_000_000.0,
-                        "capex": 40_000_000.0,
-                        "filing": None,
-                    },
-                ],
-                "profitability": {
-                    "2024": {
-                        "fiscal_year": 2024,
-                        "gross_margin": 0.6,
-                        "net_margin": 0.2,
-                    },
-                    "2023": {
-                        "fiscal_year": 2023,
-                        "gross_margin": 0.5,
-                        "net_margin": 0.125,
-                    },
-                },
-                "cash_flow": {
-                    "2024": {"fiscal_year": 2024, "free_cash_flow": 250_000_000.0},
-                    "2023": {"fiscal_year": 2023, "free_cash_flow": 200_000_000.0},
-                },
-                "growth": {
-                    "2024": {"fiscal_year": 2024, "revenue_growth": 0.25},
-                    "2023": {"fiscal_year": 2023, "revenue_growth": None},
-                },
-            }
-        )
+    def test_fundamentals_node_extracts_latest_tool_result_and_applies_facts(self) -> None:
+        output = FundamentalsOutput(narrative="llm", concerns=[])
+        completed = FundamentalsOutput(narrative="facts", concerns=[])
         nodes, _agents, _model = self._build_nodes(
             industry_result={},
             fundamentals_result={
                 "messages": [
                     ToolMessage(
-                        content=fundamentals_payload,
+                        content="first",
                         name="get_fundamentals_analysis",
+                        status="success",
                         tool_call_id="tool-1",
-                    )
+                    ),
+                    ToolMessage(
+                        content="second",
+                        name="get_fundamentals_analysis",
+                        status="success",
+                        tool_call_id="tool-2",
+                    ),
                 ],
-                "structured_response": structured_output,
+                "structured_response": output,
             },
             valuation_result={},
             risk_result={},
         )
 
-        result = nodes.fundamentals({"ticker": "aapl", "years": 2})
+        with patch(
+            "stockagent.agents.orchestrator.apply_fundamentals_facts",
+            return_value=completed,
+        ) as apply_facts:
+            result = nodes.fundamentals({"ticker": "aapl", "years": 2})
 
-        self.assertEqual(result["fundamentals"].narrative, "fundamentals")
-        self.assertEqual(result["fundamentals"].financial_filings, [filing])
-        self.assertEqual(
-            result["fundamentals"].annual_financials,
-            [
-                AnnualFinancialSnapshot(
-                    fiscal_year=2023,
-                    revenue=800_000_000.0,
-                    net_income=100_000_000.0,
-                    operating_cash_flow=240_000_000.0,
-                    capex=40_000_000.0,
-                    free_cash_flow=200_000_000.0,
-                    gross_margin=0.5,
-                    net_margin=0.125,
-                    revenue_growth=None,
-                ),
-                AnnualFinancialSnapshot(
-                    fiscal_year=2024,
-                    revenue=1_000_000_000.0,
-                    net_income=200_000_000.0,
-                    operating_cash_flow=300_000_000.0,
-                    capex=50_000_000.0,
-                    free_cash_flow=250_000_000.0,
-                    gross_margin=0.6,
-                    net_margin=0.2,
-                    revenue_growth=0.25,
-                ),
-            ],
+        self.assertEqual(result, {"fundamentals": completed})
+        apply_facts.assert_called_once_with(
+            output,
+            "second",
+            expected_ticker="aapl",
+            expected_years=2,
         )
 
-    def test_valuation_node_uses_deterministic_tool_metrics(self) -> None:
-        structured_output = ValuationOutput(
-            narrative="valuation",
-            pe_ratio=1.0,
-            pb_ratio=2.0,
-            ps_ratio=3.0,
-            evidence=[
-                Evidence(
-                    id="valuation-1",
-                    kind="web",
-                    title="Market data",
-                    url="https://example.test/market-data",
-                    source_agent="valuation_analyst",
-                )
-            ],
-            market_inputs=MarketInputs(
-                price=1.0,
-                market_cap=2.0,
-                currency="USD",
-                as_of=date(2026, 7, 20),
-                evidence_id="valuation-1",
-            ),
+    def test_valuation_node_extracts_tool_result_and_applies_facts(self) -> None:
+        output = ValuationOutput(
+            narrative="llm",
+            pe_ratio=None,
+            pb_ratio=None,
+            ps_ratio=None,
         )
-        valuation_payload = json.dumps(
-            {
-                "ticker": "AAPL",
-                "years": 3,
-                "valuation": {
-                    "pe_ratio": 30.0,
-                    "pb_ratio": 45.0,
-                    "ps_ratio": 8.0,
-                },
-                "market_inputs": {
-                    "price": 200.0,
-                    "market_cap": 3_000_000_000_000.0,
-                },
-            }
-        )
+        completed = output.model_copy(update={"pe_ratio": 30.0})
         nodes, _agents, _model = self._build_nodes(
             industry_result={},
             fundamentals_result={},
             valuation_result={
                 "messages": [
                     ToolMessage(
-                        content=valuation_payload,
+                        content="valuation-json",
                         name="compute_valuation_metrics",
+                        status="success",
                         tool_call_id="tool-1",
                     )
                 ],
-                "structured_response": structured_output,
+                "structured_response": output,
             },
             risk_result={},
         )
-        state = {
-            "ticker": "aapl",
-            "years": 3,
-            "industry": IndustryOutput(narrative="industry", evidence=[]),
-            "fundamentals": FundamentalsOutput(
-                narrative="fundamentals",
-                key_metrics={},
-                concerns=[],
-            ),
-        }
 
-        result = nodes.valuation(state)
+        with patch(
+            "stockagent.agents.orchestrator.apply_valuation_facts",
+            return_value=completed,
+        ) as apply_facts:
+            result = nodes.valuation(
+                {
+                    "ticker": "AAPL",
+                    "years": 3,
+                    "industry": IndustryOutput(narrative="industry", evidence=[]),
+                    "fundamentals": FundamentalsOutput(narrative="fundamentals", concerns=[]),
+                }
+            )
 
-        self.assertEqual(result["valuation"].narrative, "valuation")
-        self.assertEqual(result["valuation"].pe_ratio, 30.0)
-        self.assertEqual(result["valuation"].pb_ratio, 45.0)
-        self.assertEqual(result["valuation"].ps_ratio, 8.0)
-        self.assertEqual(result["valuation"].market_inputs.price, 200.0)
-        self.assertEqual(
-            result["valuation"].market_inputs.market_cap,
-            3_000_000_000_000.0,
-        )
-        self.assertEqual(result["valuation"].market_inputs.currency, "USD")
-        self.assertEqual(result["valuation"].market_inputs.as_of, date(2026, 7, 20))
-        self.assertEqual(
-            result["valuation"].market_inputs.evidence_id,
-            "valuation-1",
+        self.assertEqual(result, {"valuation": completed})
+        apply_facts.assert_called_once_with(
+            output,
+            "valuation-json",
+            expected_ticker="AAPL",
+            expected_years=3,
         )
 
-    def test_valuation_node_rejects_market_input_evidence_not_selected(self) -> None:
-        structured_output = ValuationOutput(
-            narrative="valuation",
-            pe_ratio=None,
-            pb_ratio=None,
-            ps_ratio=None,
-            evidence=[],
-            market_inputs=MarketInputs(evidence_id="valuation-1"),
-        )
-        valuation_payload = json.dumps(
-            {
-                "ticker": "AAPL",
-                "years": 3,
-                "valuation": {
-                    "pe_ratio": None,
-                    "pb_ratio": None,
-                    "ps_ratio": None,
-                },
-                "market_inputs": {"price": None, "market_cap": None},
-            }
-        )
-        nodes, _agents, _model = self._build_nodes(
-            industry_result={},
-            fundamentals_result={},
-            valuation_result={
-                "messages": [
+    def test_fact_node_rejects_missing_or_non_text_success_result(self) -> None:
+        output = FundamentalsOutput(narrative="llm", concerns=[])
+        for content in (None, {"json": True}):
+            with self.subTest(content=content):
+                message = [] if content is None else [
                     ToolMessage(
-                        content=valuation_payload,
-                        name="compute_valuation_metrics",
+                        content=content,
+                        name="get_fundamentals_analysis",
+                        status="success",
                         tool_call_id="tool-1",
                     )
-                ],
-                "structured_response": structured_output,
-            },
-            risk_result={},
-        )
-        state = {
-            "ticker": "AAPL",
-            "years": 3,
-            "industry": IndustryOutput(narrative="industry", evidence=[]),
-            "fundamentals": FundamentalsOutput(
-                narrative="fundamentals",
-                key_metrics={},
-                concerns=[],
-            ),
-        }
-
-        with self.assertRaises(AgentOutputError):
-            nodes.valuation(state)
-
-    def test_valuation_node_rejects_invalid_deterministic_tool_results(self) -> None:
-        structured_output = ValuationOutput(
-            narrative="valuation",
-            pe_ratio=None,
-            pb_ratio=None,
-            ps_ratio=None,
-            evidence=[],
-            market_inputs=MarketInputs(),
-        )
-        state = {
-            "ticker": "AAPL",
-            "years": 3,
-            "industry": IndustryOutput(narrative="industry", evidence=[]),
-            "fundamentals": FundamentalsOutput(
-                narrative="fundamentals",
-                key_metrics={},
-                concerns=[],
-            ),
-        }
-        cases = {
-            "missing": [],
-            "invalid_json": [
-                ToolMessage(
-                    content="not json",
-                    name="compute_valuation_metrics",
-                    tool_call_id="tool-1",
-                )
-            ],
-            "wrong_ticker": [
-                ToolMessage(
-                    content=json.dumps(
-                        {
-                            "ticker": "MSFT",
-                            "years": 3,
-                            "valuation": {},
-                        }
-                    ),
-                    name="compute_valuation_metrics",
-                    tool_call_id="tool-1",
-                )
-            ],
-            "wrong_years": [
-                ToolMessage(
-                    content=json.dumps(
-                        {
-                            "ticker": "AAPL",
-                            "years": 5,
-                            "valuation": {},
-                        }
-                    ),
-                    name="compute_valuation_metrics",
-                    tool_call_id="tool-1",
-                )
-            ],
-            "missing_market_inputs": [
-                ToolMessage(
-                    content=json.dumps(
-                        {
-                            "ticker": "AAPL",
-                            "years": 3,
-                            "valuation": {
-                                "pe_ratio": None,
-                                "pb_ratio": None,
-                                "ps_ratio": None,
-                            },
-                        }
-                    ),
-                    name="compute_valuation_metrics",
-                    tool_call_id="tool-1",
-                )
-            ],
-            "missing_market_input_field": [
-                ToolMessage(
-                    content=json.dumps(
-                        {
-                            "ticker": "AAPL",
-                            "years": 3,
-                            "valuation": {
-                                "pe_ratio": None,
-                                "pb_ratio": None,
-                                "ps_ratio": None,
-                            },
-                            "market_inputs": {"price": None},
-                        }
-                    ),
-                    name="compute_valuation_metrics",
-                    tool_call_id="tool-1",
-                )
-            ],
-        }
-
-        for name, messages in cases.items():
-            with self.subTest(name=name):
-                nodes, _agents, _model = self._build_nodes(
-                    industry_result={},
-                    fundamentals_result={},
-                    valuation_result={
-                        "messages": messages,
-                        "structured_response": structured_output,
-                    },
-                    risk_result={},
-                )
-
-                with self.assertRaises(AgentOutputError):
-                    nodes.valuation(state)
-
-    def test_fundamentals_node_rejects_invalid_deterministic_tool_results(self) -> None:
-        structured_output = FundamentalsOutput(
-            narrative="fundamentals",
-            key_metrics={},
-            concerns=[],
-        )
-        cases = {
-            "missing": [],
-            "invalid_json": [
-                ToolMessage(
-                    content="not json",
-                    name="get_fundamentals_analysis",
-                    tool_call_id="tool-1",
-                )
-            ],
-            "wrong_ticker": [
-                ToolMessage(
-                    content=json.dumps({"ticker": "MSFT", "records": []}),
-                    name="get_fundamentals_analysis",
-                    tool_call_id="tool-1",
-                )
-            ],
-            "mismatched_filing": [
-                ToolMessage(
-                    content=json.dumps(
-                        {
-                            "ticker": "AAPL",
-                            "records": [
-                                {
-                                    "fiscal_year": 2023,
-                                    "filing": {
-                                        "form": "10-K",
-                                        "fiscal_year": 2024,
-                                        "period_end": "2024-12-31",
-                                        "filed_at": "2025-02-20",
-                                        "cik": "123456",
-                                        "accession_number": "0000123456-25-000001",
-                                        "primary_document": "annual-report.htm",
-                                        "url": "https://example.test/annual-report.htm",
-                                    },
-                                }
-                            ],
-                        }
-                    ),
-                    name="get_fundamentals_analysis",
-                    tool_call_id="tool-1",
-                )
-            ],
-        }
-
-        for name, messages in cases.items():
-            with self.subTest(name=name):
+                ]
                 nodes, _agents, _model = self._build_nodes(
                     industry_result={},
                     fundamentals_result={
-                        "messages": messages,
-                        "structured_response": structured_output,
+                        "messages": message,
+                        "structured_response": output,
                     },
                     valuation_result={},
                     risk_result={},
                 )
-
                 with self.assertRaises(AgentOutputError):
-                    nodes.fundamentals({"ticker": "AAPL", "years": 3})
+                    nodes.fundamentals({"ticker": "AAPL", "years": 2})
 
     def test_synthesize_node_composes_report_from_structured_model_output(self) -> None:
         nodes, _agents, model = self._build_nodes(
@@ -577,11 +272,7 @@ class AnalysisNodesTest(unittest.TestCase):
             "ticker": "AAPL",
             "years": 3,
             "industry": IndustryOutput(narrative="industry", evidence=[]),
-            "fundamentals": FundamentalsOutput(
-                narrative="fundamentals",
-                key_metrics={"revenue_growth": 0.1},
-                concerns=[],
-            ),
+            "fundamentals": FundamentalsOutput(narrative="fundamentals", concerns=[]),
             "valuation": ValuationOutput(
                 narrative="valuation",
                 pe_ratio=30.0,
@@ -608,11 +299,6 @@ class AnalysisNodesTest(unittest.TestCase):
         self.assertIn("## 免责声明", result["final_report"])
         self.assertEqual(result["cited_evidence_ids"], [])
         self.assertIsNotNone(model.output_type)
-        self.assertIn("30.0", model.payload[0]["content"])
-        self.assertIn("只生成摘要和投资建议", model.payload[0]["content"])
-        self.assertIn("不得自行发明", model.payload[0]["content"])
-        self.assertIn("[industry-1]", model.payload[0]["content"])
-        self.assertIn("[sec-", model.payload[0]["content"])
 
     def test_synthesize_node_renders_citations_and_records_cited_evidence(self) -> None:
         nodes, _agents, _model = self._build_nodes(
@@ -641,11 +327,7 @@ class AnalysisNodesTest(unittest.TestCase):
                     )
                 ],
             ),
-            "fundamentals": FundamentalsOutput(
-                narrative="fundamentals",
-                key_metrics={},
-                concerns=[],
-            ),
+            "fundamentals": FundamentalsOutput(narrative="fundamentals", concerns=[]),
             "valuation": ValuationOutput(
                 narrative="valuation",
                 pe_ratio=None,

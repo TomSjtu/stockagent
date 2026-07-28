@@ -17,6 +17,16 @@ from stockagent.financials import SecFilingReference
 
 
 class AgentStateTest(unittest.TestCase):
+    def test_deterministic_fields_have_defaults_and_key_metrics_is_removed(self) -> None:
+        fundamentals = FundamentalsOutput(narrative="基本面分析", concerns=[])
+        valuation = ValuationOutput(narrative="估值分析")
+
+        self.assertFalse(hasattr(fundamentals, "key_metrics"))
+        self.assertEqual(fundamentals.annual_financials, [])
+        self.assertIsNone(valuation.pe_ratio)
+        self.assertIsNone(valuation.pb_ratio)
+        self.assertIsNone(valuation.ps_ratio)
+
     def test_outputs_accept_the_cross_agent_contract(self) -> None:
         industry = IndustryOutput(
             narrative="行业分析",
@@ -35,7 +45,6 @@ class AgentStateTest(unittest.TestCase):
         )
         fundamentals = FundamentalsOutput(
             narrative="基本面分析",
-            key_metrics={"roe": 0.25, "debt_ratio": None},
             concerns=["收入增速放缓"],
             financial_filings=[
                 SecFilingReference(
@@ -84,7 +93,6 @@ class AgentStateTest(unittest.TestCase):
         )
 
         self.assertEqual(industry.evidence[0].id, "industry-1")
-        self.assertIsNone(fundamentals.key_metrics["debt_ratio"])
         self.assertEqual(fundamentals.financial_filings[0].fiscal_year, 2025)
         self.assertEqual(valuation.pe_ratio, 30.0)
         self.assertEqual(valuation.market_inputs.evidence_id, "valuation-1")

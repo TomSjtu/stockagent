@@ -50,7 +50,6 @@ class OrchestratorRunnerTest(unittest.TestCase):
                 "industry": IndustryOutput(narrative="industry", evidence=[evidence]),
                 "fundamentals": FundamentalsOutput(
                     narrative="fundamentals",
-                    key_metrics={},
                     concerns=[],
                 ),
                 "valuation": ValuationOutput(
@@ -115,7 +114,6 @@ class OrchestratorRunnerTest(unittest.TestCase):
                 "industry": IndustryOutput(narrative="industry", evidence=[]),
                 "fundamentals": FundamentalsOutput(
                     narrative="fundamentals",
-                    key_metrics={},
                     concerns=[],
                     financial_filings=[filing],
                 ),

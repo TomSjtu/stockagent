@@ -18,7 +18,7 @@ FUNDAMENTALS_PROMPT = (
     "年度财务数字仅来自工具提供的 SEC 10-K filing；涉及年度财务数据的段落或表格行"
     "使用对应财年的内部标记，例如 [sec-2024]，不得伪造 URL、标题或 filing。\n\n"
     "不要只罗列数据，要解释趋势和含义。以 FundamentalsOutput 返回分析正文、"
-    "关键指标、主要关注点和 financial_filings。"
+    "主要关注点和 financial_filings。"
 )
 
 
