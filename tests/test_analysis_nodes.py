@@ -9,10 +9,12 @@ from stockagent.agents.errors import AgentOutputError
 from stockagent.agents.orchestrator import build_analysis_nodes
 from stockagent.agents.state import (
     Evidence,
+    FundamentalsAgentOutput,
     FundamentalsOutput,
     IndustryOutput,
     MarketInputs,
     RiskOutput,
+    ValuationAgentOutput,
     ValuationOutput,
 )
 
@@ -148,7 +150,7 @@ class AnalysisNodesTest(unittest.TestCase):
             nodes.industry({"ticker": "AAPL", "years": 3})
 
     def test_fundamentals_node_extracts_latest_tool_result_and_applies_facts(self) -> None:
-        output = FundamentalsOutput(narrative="llm", concerns=[])
+        output = FundamentalsAgentOutput(narrative="llm", concerns=[])
         completed = FundamentalsOutput(narrative="facts", concerns=[])
         nodes, _agents, _model = self._build_nodes(
             industry_result={},
@@ -188,13 +190,8 @@ class AnalysisNodesTest(unittest.TestCase):
         )
 
     def test_valuation_node_extracts_tool_result_and_applies_facts(self) -> None:
-        output = ValuationOutput(
-            narrative="llm",
-            pe_ratio=None,
-            pb_ratio=None,
-            ps_ratio=None,
-        )
-        completed = output.model_copy(update={"pe_ratio": 30.0})
+        output = ValuationAgentOutput(narrative="llm")
+        completed = ValuationOutput(narrative="llm", pe_ratio=30.0)
         nodes, _agents, _model = self._build_nodes(
             industry_result={},
             fundamentals_result={},
@@ -233,8 +230,46 @@ class AnalysisNodesTest(unittest.TestCase):
             expected_years=3,
         )
 
+    def test_valuation_node_wraps_unknown_market_evidence_id(self) -> None:
+        nodes, _agents, _model = self._build_nodes(
+            industry_result={},
+            fundamentals_result={},
+            valuation_result={
+                "messages": [
+                    ToolMessage(
+                        content="valuation-json",
+                        name="compute_valuation_metrics",
+                        status="success",
+                        tool_call_id="tool-1",
+                    )
+                ],
+                "structured_response": {
+                    "narrative": "llm",
+                    "evidence": [],
+                    "market_inputs": {"evidence_id": "valuation-1"},
+                },
+            },
+            risk_result={},
+        )
+
+        with self.assertRaisesRegex(
+            AgentOutputError,
+            "valuation_analyst.*invalid structured_response",
+        ):
+            nodes.valuation(
+                {
+                    "ticker": "AAPL",
+                    "years": 3,
+                    "industry": IndustryOutput(narrative="industry", evidence=[]),
+                    "fundamentals": FundamentalsOutput(
+                        narrative="fundamentals",
+                        concerns=[],
+                    ),
+                }
+            )
+
     def test_fact_node_rejects_missing_or_non_text_success_result(self) -> None:
-        output = FundamentalsOutput(narrative="llm", concerns=[])
+        output = FundamentalsAgentOutput(narrative="llm", concerns=[])
         for content in (None, {"json": True}):
             with self.subTest(content=content):
                 message = [] if content is None else [

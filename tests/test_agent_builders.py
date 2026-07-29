@@ -10,10 +10,10 @@ from stockagent.agents.fundamentals_agent import build_fundamentals_agent
 from stockagent.agents.industry_agent import build_industry_agent
 from stockagent.agents.risk_agent import build_risk_agent
 from stockagent.agents.state import (
-    FundamentalsOutput,
+    FundamentalsAgentOutput,
     IndustryOutput,
     RiskOutput,
-    ValuationOutput,
+    ValuationAgentOutput,
 )
 from stockagent.agents.valuation_agent import build_valuation_agent
 from stockagent.tools import (
@@ -38,8 +38,9 @@ class AgentBuildersTest(unittest.TestCase):
             module="stockagent.agents.fundamentals_agent",
             builder=build_fundamentals_agent,
             tools=[get_fundamentals_analysis],
-            output_type=FundamentalsOutput,
+            output_type=FundamentalsAgentOutput,
             prompt_terms=("SEC 10-K", "[sec-"),
+            forbidden_prompt_terms=("financial_filings",),
         )
 
     def test_valuation_builder_uses_search_and_valuation_tool(self) -> None:
@@ -47,7 +48,7 @@ class AgentBuildersTest(unittest.TestCase):
             module="stockagent.agents.valuation_agent",
             builder=build_valuation_agent,
             tools=[web_search, compute_valuation_metrics],
-            output_type=ValuationOutput,
+            output_type=ValuationAgentOutput,
             prompt_terms=(
                 "实际采用",
                 "kind='web'",
@@ -55,6 +56,7 @@ class AgentBuildersTest(unittest.TestCase):
                 "market_inputs",
                 "来源优先级",
             ),
+            forbidden_prompt_terms=("估值字段",),
         )
 
     def test_risk_builder_only_uses_search(self) -> None:
@@ -74,6 +76,7 @@ class AgentBuildersTest(unittest.TestCase):
         tools: list[object],
         output_type: type,
         prompt_terms: tuple[str, ...],
+        forbidden_prompt_terms: tuple[str, ...] = (),
     ) -> None:
         model = object()
         built_agent = object()
@@ -91,6 +94,9 @@ class AgentBuildersTest(unittest.TestCase):
         for prompt_term in prompt_terms:
             with self.subTest(prompt_term=prompt_term):
                 self.assertIn(prompt_term, kwargs["system_prompt"])
+        for prompt_term in forbidden_prompt_terms:
+            with self.subTest(forbidden_prompt_term=prompt_term):
+                self.assertNotIn(prompt_term, kwargs["system_prompt"])
         self.assertNotIn("read_file", kwargs["system_prompt"])
         self.assertNotIn("write_file", kwargs["system_prompt"])
         strategy = kwargs["response_format"]

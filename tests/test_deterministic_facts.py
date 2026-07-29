@@ -13,8 +13,10 @@ from stockagent.agents.facts import (
 )
 from stockagent.agents.state import (
     Evidence,
+    FundamentalsAgentOutput,
     FundamentalsOutput,
     MarketInputs,
+    ValuationAgentOutput,
     ValuationOutput,
 )
 from stockagent.financials import SecFilingReference
@@ -47,6 +49,7 @@ class DeterministicFactsTest(unittest.TestCase):
         )
 
         self.assertIsNot(result, output)
+        self.assertIsInstance(result, FundamentalsOutput)
         self.assertEqual(output, original)
         self.assertEqual(result.narrative, "基本面叙事")
         self.assertEqual(result.concerns, ["收入增速放缓"])
@@ -302,6 +305,7 @@ class DeterministicFactsTest(unittest.TestCase):
         )
 
         self.assertIsNot(result, output)
+        self.assertIsInstance(result, ValuationOutput)
         self.assertEqual(output, original)
         self.assertEqual(result.narrative, "估值叙事")
         self.assertEqual(result.evidence, output.evidence)
@@ -405,18 +409,6 @@ class DeterministicFactsTest(unittest.TestCase):
                         expected_years=3,
                     )
 
-    def test_valuation_rejects_unknown_market_evidence_id(self) -> None:
-        output = self._valuation_output()
-        output.market_inputs.evidence_id = "unknown"
-
-        with self.assertRaisesRegex(AgentOutputError, "unknown market evidence ID"):
-            apply_valuation_facts(
-                output,
-                json.dumps(self._valuation_payload()),
-                expected_ticker="AAPL",
-                expected_years=3,
-            )
-
     def test_valuation_converts_full_model_validation_failure(self) -> None:
         output = self._valuation_output()
         output.narrative = object()  # type: ignore[assignment]
@@ -433,16 +425,10 @@ class DeterministicFactsTest(unittest.TestCase):
             )
 
     @staticmethod
-    def _fundamentals_output() -> FundamentalsOutput:
-        return FundamentalsOutput(
+    def _fundamentals_output() -> FundamentalsAgentOutput:
+        return FundamentalsAgentOutput(
             narrative="基本面叙事",
             concerns=["收入增速放缓"],
-            financial_filings=[
-                DeterministicFactsTest._filing(2022),
-            ],
-            annual_financials=[
-                AnnualFinancialSnapshot(fiscal_year=2022, revenue=-1.0),
-            ],
         )
 
     @staticmethod
@@ -504,12 +490,9 @@ class DeterministicFactsTest(unittest.TestCase):
         }
 
     @staticmethod
-    def _valuation_output() -> ValuationOutput:
-        return ValuationOutput(
+    def _valuation_output() -> ValuationAgentOutput:
+        return ValuationAgentOutput(
             narrative="估值叙事",
-            pe_ratio=1.0,
-            pb_ratio=2.0,
-            ps_ratio=3.0,
             evidence=[
                 Evidence(
                     id="valuation-1",

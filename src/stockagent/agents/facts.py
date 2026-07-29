@@ -8,7 +8,9 @@ from pydantic import ValidationError as _ValidationError
 
 from stockagent.agents.errors import AgentOutputError as _AgentOutputError
 from stockagent.agents.state import (
+    FundamentalsAgentOutput as _FundamentalsAgentOutput,
     FundamentalsOutput as _FundamentalsOutput,
+    ValuationAgentOutput as _ValuationAgentOutput,
     ValuationOutput as _ValuationOutput,
 )
 from stockagent.financials import SecFilingReference as _SecFilingReference
@@ -23,7 +25,7 @@ _VALUATION_TOOL = "compute_valuation_metrics"
 
 
 def apply_fundamentals_facts(
-    output: _FundamentalsOutput,
+    output: _FundamentalsAgentOutput,
     tool_content: str,
     expected_ticker: str,
     expected_years: int,
@@ -177,12 +179,11 @@ def apply_fundamentals_facts(
     snapshots.sort(key=lambda snapshot: snapshot.fiscal_year)
     filings.sort(key=lambda filing: filing.fiscal_year)
     try:
-        return _FundamentalsOutput.model_validate(
-            {
-                **output.model_dump(),
-                "annual_financials": snapshots,
-                "financial_filings": filings,
-            }
+        return _FundamentalsOutput(
+            narrative=output.narrative,
+            concerns=output.concerns,
+            annual_financials=snapshots,
+            financial_filings=filings,
         )
     except _ValidationError as exc:
         raise _AgentOutputError(
@@ -191,7 +192,7 @@ def apply_fundamentals_facts(
 
 
 def apply_valuation_facts(
-    output: _ValuationOutput,
+    output: _ValuationAgentOutput,
     tool_content: str,
     expected_ticker: str,
     expected_years: int,
@@ -244,25 +245,20 @@ def apply_valuation_facts(
         for name in ("price", "market_cap")
     }
 
-    # 证据由模型选择，先确认引用 ID 存在，再将确定性数值合并回输出。
-    evidence_id = output.market_inputs.evidence_id
-    if evidence_id is not None and evidence_id not in {
-        evidence.id for evidence in output.evidence
-    }:
-        raise _AgentOutputError(
-            "valuation_analyst returned an unknown market evidence ID"
-        )
-
     try:
-        return _ValuationOutput.model_validate(
-            {
-                **output.model_dump(),
-                **metrics,
-                "market_inputs": {
-                    **output.market_inputs.model_dump(),
-                    **market_inputs,
-                },
-            }
+        return _ValuationOutput(
+            narrative=output.narrative,
+            evidence=output.evidence,
+            pe_ratio=metrics["pe_ratio"],
+            pb_ratio=metrics["pb_ratio"],
+            ps_ratio=metrics["ps_ratio"],
+            market_inputs={
+                "price": market_inputs["price"],
+                "market_cap": market_inputs["market_cap"],
+                "currency": output.market_inputs.currency,
+                "as_of": output.market_inputs.as_of,
+                "evidence_id": output.market_inputs.evidence_id,
+            },
         )
     except _ValidationError as exc:
         raise _AgentOutputError(

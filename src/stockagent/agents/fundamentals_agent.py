@@ -4,7 +4,7 @@ from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models import BaseChatModel
 
-from stockagent.agents.state import FundamentalsOutput
+from stockagent.agents.state import FundamentalsAgentOutput
 from stockagent.tools import get_fundamentals_analysis
 
 FUNDAMENTALS_PROMPT = (
@@ -17,8 +17,8 @@ FUNDAMENTALS_PROMPT = (
     "4. 成长性，包括收入、净利润、自由现金流增速和 CAGR\n\n"
     "年度财务数字仅来自工具提供的 SEC 10-K filing；涉及年度财务数据的段落或表格行"
     "使用对应财年的内部标记，例如 [sec-2024]，不得伪造 URL、标题或 filing。\n\n"
-    "不要只罗列数据，要解释趋势和含义。以 FundamentalsOutput 返回分析正文、"
-    "主要关注点和 financial_filings。"
+    "不要只罗列数据，要解释趋势和含义。以 FundamentalsAgentOutput 返回分析正文和"
+    "主要关注点。"
 )
 
 
@@ -28,5 +28,5 @@ def build_fundamentals_agent(model: BaseChatModel):
         model=model,
         tools=[get_fundamentals_analysis],
         system_prompt=FUNDAMENTALS_PROMPT,
-        response_format=ToolStrategy(FundamentalsOutput, handle_errors=False),
+        response_format=ToolStrategy(FundamentalsAgentOutput, handle_errors=False),
     )

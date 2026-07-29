@@ -22,9 +22,11 @@ from stockagent.agents.risk_agent import build_risk_agent
 from stockagent.agents.state import (
     AnalysisState,
     Evidence,
+    FundamentalsAgentOutput,
     FundamentalsOutput,
     IndustryOutput,
     RiskOutput,
+    ValuationAgentOutput,
     ValuationOutput,
 )
 from stockagent.agents.subagent_progress import AgentProgressCallbackHandler
@@ -136,7 +138,7 @@ def _build_fundamentals_node(agent: Any) -> StateNode:
                 f"{state['ticker'].upper()} 最近 {state['years']} 个财年的盈利能力、"
                 "现金流、财务健康和成长性。"
             ),
-            output_type=FundamentalsOutput,
+            output_type=FundamentalsAgentOutput,
         )
         # 编排层只处理 LangChain 消息；工具 JSON 的校验和事实投影由 facts module 负责。
         tool_content = _extract_tool_content(
@@ -168,9 +170,9 @@ def _build_valuation_node(agent: Any) -> StateNode:
                 f"行业分析：\n{state['industry'].model_dump_json(indent=2)}\n\n"
                 f"基本面分析：\n{state['fundamentals'].model_dump_json(indent=2)}"
             ),
-            output_type=ValuationOutput,
+            output_type=ValuationAgentOutput,
         )
-        # 未经 facts module 覆盖的 LLM 估值字段不得写入 AnalysisState。
+        # facts module 根据 LLM 叙事字段和工具结果构造写入 state 的完整估值模型。
         tool_content = _extract_tool_content(
             messages,
             tool_name="compute_valuation_metrics",

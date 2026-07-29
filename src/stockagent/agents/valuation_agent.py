@@ -4,7 +4,7 @@ from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models import BaseChatModel
 
-from stockagent.agents.state import ValuationOutput
+from stockagent.agents.state import ValuationAgentOutput
 from stockagent.tools import (
     compute_valuation_metrics,
     web_search,
@@ -31,7 +31,7 @@ VALUATION_PROMPT = (
     "为 null。\n\n"
     "来源优先级：财务披露和管理层指引优先 SEC 或公司 IR；监管和政策优先政府或监管"
     "机构原文；产品和公司公告优先公司官网；行业与市场观点可使用可信财经媒体。\n\n"
-    "以 ValuationOutput 返回中文分析、evidence、market_inputs 和估值字段；不得自行"
+    "以 ValuationAgentOutput 返回中文分析、evidence 和 market_inputs；不得自行"
     "重新计算 PE、PB、PS。"
 )
 
@@ -42,5 +42,5 @@ def build_valuation_agent(model: BaseChatModel):
         model=model,
         tools=[web_search, compute_valuation_metrics],
         system_prompt=VALUATION_PROMPT,
-        response_format=ToolStrategy(ValuationOutput, handle_errors=False),
+        response_format=ToolStrategy(ValuationAgentOutput, handle_errors=False),
     )
