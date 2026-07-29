@@ -2,20 +2,32 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
+from unittest.mock import patch
 
 from stockagent.agents.orchestrator import (
     AnalysisNodes,
     _build_synthesize_node,
     build_analysis_graph,
+    build_analysis_nodes,
 )
 from stockagent.agents.state import (
     Evidence,
+    FundamentalsAgentOutput,
     FundamentalsOutput,
     IndustryOutput,
+    MarketInputs,
     RiskOutput,
+    ValuationAgentOutput,
     ValuationOutput,
 )
-from stockagent.financials import SecFilingReference
+from stockagent.api import AnalysisResult
+from stockagent.financials import (
+    CashFlowMetrics,
+    FinancialRecord,
+    GrowthMetrics,
+    ProfitabilityMetrics,
+    SecFilingReference,
+)
 from stockagent.report.composer import AnnualFinancialSnapshot
 
 
@@ -174,6 +186,151 @@ class AnalysisGraphTest(unittest.TestCase):
 
 
 class ReportCompositionFlowTest(unittest.TestCase):
+    def test_real_nodes_project_financials_through_graph_to_report(self) -> None:
+        filing_2023 = self._filing(2023)
+        filing_2024 = self._filing(2024)
+        analysis = AnalysisResult(
+            ticker="AAPL",
+            records=[
+                FinancialRecord(
+                    "AAPL",
+                    "Apple Inc.",
+                    2024,
+                    revenue=2_000_000_000.0,
+                    net_income=180_000_000.0,
+                    operating_cash_flow=400_000_000.0,
+                    capex=80_000_000.0,
+                    eps_diluted=2.0,
+                    shareholders_equity=500_000_000.0,
+                    filing=filing_2024,
+                ),
+                FinancialRecord(
+                    "AAPL",
+                    "Apple Inc.",
+                    2023,
+                    revenue=1_250_000_000.0,
+                    net_income=100_000_000.0,
+                    operating_cash_flow=250_000_000.0,
+                    capex=50_000_000.0,
+                    eps_diluted=1.0,
+                    shareholders_equity=400_000_000.0,
+                    filing=filing_2023,
+                ),
+            ],
+            profitability={
+                2023: ProfitabilityMetrics(
+                    fiscal_year=2023,
+                    gross_margin=0.4,
+                    net_margin=0.08,
+                ),
+                2024: ProfitabilityMetrics(
+                    fiscal_year=2024,
+                    gross_margin=0.45,
+                    net_margin=0.09,
+                ),
+            },
+            cash_flow={
+                2023: CashFlowMetrics(
+                    fiscal_year=2023,
+                    free_cash_flow=200_000_000.0,
+                ),
+                2024: CashFlowMetrics(
+                    fiscal_year=2024,
+                    free_cash_flow=320_000_000.0,
+                ),
+            },
+            financial_health={},
+            growth={
+                2023: GrowthMetrics(fiscal_year=2023, revenue_growth=None),
+                2024: GrowthMetrics(fiscal_year=2024, revenue_growth=0.6),
+            },
+        )
+        agent_results = {
+            "industry": {
+                "messages": [],
+                "structured_response": IndustryOutput(
+                    narrative="行业正文",
+                    evidence=[],
+                ),
+            },
+            "fundamentals": {
+                "messages": [],
+                "structured_response": FundamentalsAgentOutput(
+                    narrative="基本面正文",
+                    concerns=[],
+                ),
+            },
+            "valuation": {
+                "messages": [],
+                "structured_response": ValuationAgentOutput(
+                    narrative="估值正文",
+                    evidence=[],
+                    market_inputs=MarketInputs(
+                        price=40.0,
+                        market_cap=200_000_000.0,
+                        currency="USD",
+                    ),
+                ),
+            },
+            "risk": {
+                "messages": [],
+                "structured_response": RiskOutput(
+                    narrative="风险正文",
+                    overall_rating="低",
+                    key_risks=[],
+                    evidence=[],
+                ),
+            },
+        }
+        model = FakeSynthesisModel(
+            {
+                "summary": "摘要正文",
+                "investment_recommendation": "投资建议正文",
+            }
+        )
+
+        with (
+            patch(
+                "stockagent.agents.orchestrator.build_industry_agent",
+                return_value=FakeAgent(agent_results["industry"]),
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_fundamentals_agent",
+                return_value=FakeAgent(agent_results["fundamentals"]),
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_valuation_agent",
+                return_value=FakeAgent(agent_results["valuation"]),
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_risk_agent",
+                return_value=FakeAgent(agent_results["risk"]),
+            ),
+            patch("stockagent.agents.facts._api.analyze", return_value=analysis),
+        ):
+            graph = build_analysis_graph(build_analysis_nodes(model))
+            result = graph.invoke({"ticker": "aapl", "years": 2})
+
+        markdown = result["final_report"]
+        self.assertIn("| 指标 | 2023 [^1] | 2024 [^2] |", markdown)
+        self.assertIn("| 收入 | 1,250.0 | 2,000.0 |", markdown)
+        self.assertIn("| 毛利率 | 40.0% | 45.0% |", markdown)
+        self.assertIn(
+            "[^1]: SEC 10-K｜截至 2023-12-31｜Filed 2024-02-20｜"
+            "https://www.sec.gov/Archives/edgar/data/320193/annual-report-2023.htm",
+            markdown,
+        )
+        self.assertIn(
+            "[^2]: SEC 10-K｜截至 2024-12-31｜Filed 2025-02-20｜"
+            "https://www.sec.gov/Archives/edgar/data/320193/annual-report-2024.htm",
+            markdown,
+        )
+        self.assertEqual(result["valuation"].pe_ratio, 20.0)
+        self.assertEqual(result["valuation"].pb_ratio, 0.4)
+        self.assertEqual(result["valuation"].ps_ratio, 0.1)
+        self.assertEqual(result["valuation"].market_inputs.price, 40.0)
+        self.assertEqual(result["valuation"].market_inputs.market_cap, 200_000_000.0)
+
     def test_graph_composes_complete_report_and_renders_citations_in_reading_order(
         self,
     ) -> None:
@@ -336,6 +493,14 @@ class FakeSynthesisModel:
     def invoke(self, messages: list[dict[str, str]]) -> dict[str, str]:
         self.messages = messages
         return self.response
+
+
+class FakeAgent:
+    def __init__(self, result: object) -> None:
+        self.result = result
+
+    def invoke(self, _payload: object, config: object | None = None) -> object:
+        return self.result
 
 
 if __name__ == "__main__":

@@ -106,7 +106,7 @@ stockagent.cli:main
 
 - `industry_analyst` 使用 `web_search` 做行业和近期信息收集。
 - `fundamentals_analyst` 使用 EDGAR 财务数据和确定性指标工具做基本面分析，并保留年度 10-K 元数据。
-- `valuation_analyst` 会结合 `web_search` 提取的市场输入，调用 `compute_valuation_metrics()` 计算 trailing PE / PB / PS；实际传入的价格和市值会被确定性工具结果覆盖。
+- `valuation_analyst` 会结合 `web_search` 声明报告采用的市场输入，并调用 `compute_valuation_metrics()` 辅助叙事；编排层使用其结构化输出中的价格和市值直接计算 trailing PE / PB / PS，确保比率与 `sources.json` 的市场输入一致。
 - `risk_analyst` 会综合前序结构化分析并补充近期公司风险信息。
 - 汇总阶段保留内部来源标记并渲染为脚注；未知标记仅记录 warning 后移除，不会让整份报告失败。
 

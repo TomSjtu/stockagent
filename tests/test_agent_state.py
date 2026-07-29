@@ -7,25 +7,48 @@ from pydantic import ValidationError
 from stockagent.agents.state import (
     AnalysisState,
     Evidence,
+    FundamentalsAgentOutput,
     FundamentalsOutput,
     IndustryOutput,
     MarketInputs,
     RiskOutput,
+    ValuationAgentOutput,
     ValuationOutput,
 )
 from stockagent.financials import SecFilingReference
 
 
 class AgentStateTest(unittest.TestCase):
-    def test_deterministic_fields_have_defaults_and_key_metrics_is_removed(self) -> None:
+    def test_agent_and_state_models_own_distinct_fields(self) -> None:
+        fundamentals_agent = FundamentalsAgentOutput(
+            narrative="基本面分析",
+            concerns=[],
+        )
         fundamentals = FundamentalsOutput(narrative="基本面分析", concerns=[])
+        valuation_agent = ValuationAgentOutput(narrative="估值分析")
         valuation = ValuationOutput(narrative="估值分析")
 
-        self.assertFalse(hasattr(fundamentals, "key_metrics"))
+        self.assertEqual(
+            set(type(fundamentals_agent).model_fields),
+            {"narrative", "concerns"},
+        )
+        self.assertEqual(
+            set(type(valuation_agent).model_fields),
+            {"narrative", "evidence", "market_inputs"},
+        )
         self.assertEqual(fundamentals.annual_financials, [])
+        self.assertEqual(fundamentals.financial_filings, [])
         self.assertIsNone(valuation.pe_ratio)
         self.assertIsNone(valuation.pb_ratio)
         self.assertIsNone(valuation.ps_ratio)
+
+    def test_valuation_agent_output_rejects_unknown_market_evidence_id(self) -> None:
+        with self.assertRaises(ValidationError):
+            ValuationAgentOutput(
+                narrative="估值分析",
+                evidence=[],
+                market_inputs=MarketInputs(evidence_id="valuation-1"),
+            )
 
     def test_outputs_accept_the_cross_agent_contract(self) -> None:
         industry = IndustryOutput(
@@ -121,6 +144,21 @@ class AgentStateTest(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             IndustryOutput(narrative="行业分析", evidence=[evidence, evidence])
+
+    def test_valuation_agent_output_rejects_duplicate_evidence_ids(self) -> None:
+        evidence = Evidence(
+            id="valuation-1",
+            kind="web",
+            title="市场数据",
+            url="https://example.test/market",
+            source_agent="valuation_analyst",
+        )
+
+        with self.assertRaises(ValidationError):
+            ValuationAgentOutput(
+                narrative="估值分析",
+                evidence=[evidence, evidence],
+            )
 
     def test_evidence_models_preserve_missing_values_in_json(self) -> None:
         output = ValuationOutput(

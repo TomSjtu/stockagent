@@ -4,7 +4,7 @@ from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models import BaseChatModel
 
-from stockagent.agents.state import ValuationOutput
+from stockagent.agents.state import ValuationAgentOutput
 from stockagent.tools import (
     compute_valuation_metrics,
     web_search,
@@ -26,12 +26,12 @@ VALUATION_PROMPT = (
     "发布者或发布日期时返回 null；ID 使用 valuation-1、"
     "valuation-2 等本次运行内唯一值。在相关外部事实所在段落或表格行使用 "
     "[valuation-1] 这样的内部标记；没有可靠来源时可给出分析，但不得伪造标记或来源。"
-    "对实际传入 compute_valuation_metrics 的价格和市值，返回 market_inputs："
-    "evidence_id 指向支撑它们的 evidence，currency 和 as_of 仅在来源可见时填写，否则"
-    "为 null。\n\n"
+    "返回用于报告确定性估值计算的 market_inputs：price 和 market_cap 使用你声明采用的"
+    "数值，不可用时为 null；evidence_id 指向支撑它们的 evidence，currency 和 as_of "
+    "仅在来源可见时填写，否则为 null。\n\n"
     "来源优先级：财务披露和管理层指引优先 SEC 或公司 IR；监管和政策优先政府或监管"
     "机构原文；产品和公司公告优先公司官网；行业与市场观点可使用可信财经媒体。\n\n"
-    "以 ValuationOutput 返回中文分析、evidence、market_inputs 和估值字段；不得自行"
+    "以 ValuationAgentOutput 返回中文分析、evidence 和 market_inputs；不得自行"
     "重新计算 PE、PB、PS。"
 )
 
@@ -42,5 +42,5 @@ def build_valuation_agent(model: BaseChatModel):
         model=model,
         tools=[web_search, compute_valuation_metrics],
         system_prompt=VALUATION_PROMPT,
-        response_format=ToolStrategy(ValuationOutput, handle_errors=False),
+        response_format=ToolStrategy(ValuationAgentOutput, handle_errors=False),
     )
