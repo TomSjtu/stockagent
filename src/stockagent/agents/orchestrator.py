@@ -13,8 +13,8 @@ from pydantic import BaseModel, ValidationError
 
 from stockagent.agents.errors import AgentOutputError, classify_llm_error
 from stockagent.agents.facts import (
-    apply_fundamentals_facts,
     apply_valuation_facts,
+    build_fundamentals_facts,
 )
 from stockagent.agents.fundamentals_agent import build_fundamentals_agent
 from stockagent.agents.industry_agent import build_industry_agent
@@ -130,7 +130,7 @@ def _build_industry_node(agent: Any) -> StateNode:
 def _build_fundamentals_node(agent: Any) -> StateNode:
     """Build a node that invokes the fundamentals agent and writes its output to state."""
     def fundamentals(state: AnalysisState) -> dict[str, FundamentalsOutput]:
-        output, messages = _invoke_structured_agent(
+        output, _messages = _invoke_structured_agent(
             agent,
             agent_name="fundamentals_analyst",
             payload=_agent_payload(
@@ -140,18 +140,12 @@ def _build_fundamentals_node(agent: Any) -> StateNode:
             ),
             output_type=FundamentalsAgentOutput,
         )
-        # 编排层只处理 LangChain 消息；工具 JSON 的校验和事实投影由 facts module 负责。
-        tool_content = _extract_tool_content(
-            messages,
-            tool_name="get_fundamentals_analysis",
-            agent_name="fundamentals_analyst",
-        )
+        facts = build_fundamentals_facts(state["ticker"], state["years"])
         return {
-            "fundamentals": apply_fundamentals_facts(
-                output,
-                tool_content,
-                expected_ticker=state["ticker"],
-                expected_years=state["years"],
+            "fundamentals": FundamentalsOutput(
+                narrative=output.narrative,
+                concerns=output.concerns,
+                **facts,
             )
         }
 
