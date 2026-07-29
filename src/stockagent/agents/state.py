@@ -88,7 +88,7 @@ class ValuationAgentOutput(EvidenceOutput):
 
     # 估值 Agent 生成的中文 Markdown 片段，可包含 [valuation-*] 证据标记
     narrative: str
-    # 传给 compute_valuation_metrics 的市场输入及其 Evidence ID
+    # 声明用于报告确定性估值计算的市场输入及其 Evidence ID
     market_inputs: MarketInputs = Field(default_factory=MarketInputs)
 
     @model_validator(mode="after")
@@ -105,11 +105,11 @@ class ValuationAgentOutput(EvidenceOutput):
 class ValuationOutput(ValuationAgentOutput):
     """Valuation state enriched with deterministic metric fields."""
 
-    # compute_valuation_metrics 返回的市盈率，工具不可计算时为 None
+    # 确定性财务分析计算的市盈率，无法计算时为 None
     pe_ratio: float | None = None
-    # compute_valuation_metrics 返回的市净率，工具不可计算时为 None
+    # 确定性财务分析计算的市净率，无法计算时为 None
     pb_ratio: float | None = None
-    # compute_valuation_metrics 返回的市销率，工具不可计算时为 None
+    # 确定性财务分析计算的市销率，无法计算时为 None
     ps_ratio: float | None = None
 
 

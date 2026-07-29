@@ -13,8 +13,8 @@ from pydantic import BaseModel, ValidationError
 
 from stockagent.agents.errors import AgentOutputError, classify_llm_error
 from stockagent.agents.facts import (
-    apply_valuation_facts,
     build_fundamentals_facts,
+    build_valuation_facts,
 )
 from stockagent.agents.fundamentals_agent import build_fundamentals_agent
 from stockagent.agents.industry_agent import build_industry_agent
@@ -112,7 +112,7 @@ def build_analysis_nodes(model: BaseChatModel) -> AnalysisNodes:
 def _build_industry_node(agent: Any) -> StateNode:
     """Build a node that invokes the industry agent and writes its output to state."""
     def industry(state: AnalysisState) -> dict[str, IndustryOutput]:
-        output, _messages = _invoke_structured_agent(
+        output = _invoke_structured_agent(
             agent,
             agent_name="industry_analyst",
             payload=_agent_payload(
@@ -130,7 +130,7 @@ def _build_industry_node(agent: Any) -> StateNode:
 def _build_fundamentals_node(agent: Any) -> StateNode:
     """Build a node that invokes the fundamentals agent and writes its output to state."""
     def fundamentals(state: AnalysisState) -> dict[str, FundamentalsOutput]:
-        output, _messages = _invoke_structured_agent(
+        output = _invoke_structured_agent(
             agent,
             agent_name="fundamentals_analyst",
             payload=_agent_payload(
@@ -155,7 +155,7 @@ def _build_fundamentals_node(agent: Any) -> StateNode:
 def _build_valuation_node(agent: Any) -> StateNode:
     """Build a node that invokes the valuation agent and writes its output to state."""
     def valuation(state: AnalysisState) -> dict[str, ValuationOutput]:
-        output, messages = _invoke_structured_agent(
+        output = _invoke_structured_agent(
             agent,
             agent_name="valuation_analyst",
             payload=_agent_payload(
@@ -166,18 +166,18 @@ def _build_valuation_node(agent: Any) -> StateNode:
             ),
             output_type=ValuationAgentOutput,
         )
-        # facts module 根据 LLM 叙事字段和工具结果构造写入 state 的完整估值模型。
-        tool_content = _extract_tool_content(
-            messages,
-            tool_name="compute_valuation_metrics",
-            agent_name="valuation_analyst",
+        facts = build_valuation_facts(
+            state["ticker"],
+            state["years"],
+            price=output.market_inputs.price,
+            market_cap=output.market_inputs.market_cap,
         )
         return {
-            "valuation": apply_valuation_facts(
-                output,
-                tool_content,
-                expected_ticker=state["ticker"],
-                expected_years=state["years"],
+            "valuation": ValuationOutput(
+                narrative=output.narrative,
+                evidence=output.evidence,
+                market_inputs=output.market_inputs,
+                **facts,
             )
         }
 
@@ -187,7 +187,7 @@ def _build_valuation_node(agent: Any) -> StateNode:
 def _build_risk_node(agent: Any) -> StateNode:
     """Build a node that invokes the risk agent and writes its output to state."""
     def risk(state: AnalysisState) -> dict[str, RiskOutput]:
-        output, _messages = _invoke_structured_agent(
+        output = _invoke_structured_agent(
             agent,
             agent_name="risk_analyst",
             payload=_agent_payload(
@@ -271,21 +271,21 @@ def _invoke_structured_agent(
     agent_name: str,
     payload: dict[str, list[dict[str, str]]],
     output_type: type[StructuredOutputT],
-) -> tuple[StructuredOutputT, list[Any]]:
-    """Invoke one agent and return its validated local output and local messages."""
+) -> StructuredOutputT:
+    """Invoke one agent and return its validated local output."""
     logger = get_logger(__name__)
     logger.info("启动 agent: %s", agent_name)
     result = agent.invoke(
         payload,
         config={"callbacks": [AgentProgressCallbackHandler(agent_name)]},
     )
-    output, messages = _extract_structured_response(
+    output = _extract_structured_response(
         result,
         agent_name=agent_name,
         output_type=output_type,
     )
     logger.info("agent %s 完成", agent_name)
-    return output, messages
+    return output
 
 
 def _extract_structured_response(
@@ -293,7 +293,7 @@ def _extract_structured_response(
     *,
     agent_name: str,
     output_type: type[StructuredOutputT],
-) -> tuple[StructuredOutputT, list[Any]]:
+) -> StructuredOutputT:
     """Validate an agent's local result and fail before invalid data reaches another node."""
     if not isinstance(result, Mapping):
         raise AgentOutputError(f"{agent_name} returned an invalid result")
@@ -319,32 +319,7 @@ def _extract_structured_response(
             f"{agent_name} returned an invalid structured_response"
         ) from exc
 
-    return output, messages
-
-
-def _extract_tool_content(
-    messages: list[Any],
-    *,
-    tool_name: str,
-    agent_name: str,
-) -> str:
-    """Return the latest successful text result for one tool."""
-    # Agent 可修正后再次调用同一工具，最后一次成功结果才是当前权威输入。
-    tool_message = next(
-        (
-            message
-            for message in reversed(messages)
-            if isinstance(message, ToolMessage)
-            and message.name == tool_name
-            and message.status == "success"
-        ),
-        None,
-    )
-    if tool_message is None:
-        raise AgentOutputError(f"{agent_name} did not call {tool_name}")
-    if not isinstance(tool_message.content, str):
-        raise AgentOutputError(f"{tool_name} returned non-text JSON")
-    return tool_message.content
+    return output
 
 
 def _extract_synthesis_output(response: object) -> SynthesisOutput:

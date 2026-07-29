@@ -129,7 +129,6 @@ class AnalysisNodesTest(unittest.TestCase):
                         tool_call_id="tool-1",
                     )
                 ],
-                "structured_response": IndustryOutput(narrative="ignored", evidence=[]),
             },
             fundamentals_result={},
             valuation_result={},
@@ -192,30 +191,33 @@ class AnalysisNodesTest(unittest.TestCase):
         )
         apply_facts.assert_called_once_with("aapl", 2)
 
-    def test_valuation_node_extracts_tool_result_and_applies_facts(self) -> None:
-        output = ValuationAgentOutput(narrative="llm")
-        completed = ValuationOutput(narrative="llm", pe_ratio=30.0)
+    def test_valuation_node_builds_facts_from_declared_market_inputs(self) -> None:
+        output = ValuationAgentOutput(
+            narrative="llm",
+            market_inputs=MarketInputs(
+                price=40.0,
+                market_cap=200.0,
+                currency="USD",
+            ),
+        )
         nodes, _agents, _model = self._build_nodes(
             industry_result={},
             fundamentals_result={},
             valuation_result={
-                "messages": [
-                    ToolMessage(
-                        content="valuation-json",
-                        name="compute_valuation_metrics",
-                        status="success",
-                        tool_call_id="tool-1",
-                    )
-                ],
+                "messages": [],
                 "structured_response": output,
             },
             risk_result={},
         )
 
         with patch(
-            "stockagent.agents.orchestrator.apply_valuation_facts",
-            return_value=completed,
-        ) as apply_facts:
+            "stockagent.agents.orchestrator.build_valuation_facts",
+            return_value={
+                "pe_ratio": 20.0,
+                "pb_ratio": 4.0,
+                "ps_ratio": 2.0,
+            },
+        ) as build_facts:
             result = nodes.valuation(
                 {
                     "ticker": "AAPL",
@@ -225,12 +227,27 @@ class AnalysisNodesTest(unittest.TestCase):
                 }
             )
 
-        self.assertEqual(result, {"valuation": completed})
-        apply_facts.assert_called_once_with(
-            output,
-            "valuation-json",
-            expected_ticker="AAPL",
-            expected_years=3,
+        self.assertEqual(
+            result,
+            {
+                "valuation": ValuationOutput(
+                    narrative="llm",
+                    market_inputs=MarketInputs(
+                        price=40.0,
+                        market_cap=200.0,
+                        currency="USD",
+                    ),
+                    pe_ratio=20.0,
+                    pb_ratio=4.0,
+                    ps_ratio=2.0,
+                )
+            },
+        )
+        build_facts.assert_called_once_with(
+            "AAPL",
+            3,
+            price=40.0,
+            market_cap=200.0,
         )
 
     def test_valuation_node_wraps_unknown_market_evidence_id(self) -> None:
@@ -238,14 +255,7 @@ class AnalysisNodesTest(unittest.TestCase):
             industry_result={},
             fundamentals_result={},
             valuation_result={
-                "messages": [
-                    ToolMessage(
-                        content="valuation-json",
-                        name="compute_valuation_metrics",
-                        status="success",
-                        tool_call_id="tool-1",
-                    )
-                ],
+                "messages": [],
                 "structured_response": {
                     "narrative": "llm",
                     "evidence": [],

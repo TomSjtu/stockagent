@@ -16,7 +16,7 @@ class EvidenceBundle(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list)
     # Markdown 实际脚注使用的 Evidence.id 列表
     cited_evidence_ids: list[str] = Field(default_factory=list)
-    # valuation 工具实际使用的价格、市值、币种、日期和证据 ID
+    # 报告确定性估值实际使用的价格、市值、币种、日期和证据 ID
     market_inputs: MarketInputs = Field(default_factory=MarketInputs)
     # 财务记录关联的年度 SEC filing 元数据列表
     financial_filings: list[SecFilingReference] = Field(default_factory=list)

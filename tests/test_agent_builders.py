@@ -56,7 +56,10 @@ class AgentBuildersTest(unittest.TestCase):
                 "market_inputs",
                 "来源优先级",
             ),
-            forbidden_prompt_terms=("估值字段",),
+            forbidden_prompt_terms=(
+                "估值字段",
+                "实际传入 compute_valuation_metrics",
+            ),
         )
 
     def test_risk_builder_only_uses_search(self) -> None:
