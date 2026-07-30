@@ -12,6 +12,7 @@ from stockagent.agents.state import (
     IndustryOutput,
     MarketInputs,
     RiskOutput,
+    SynthesisOutput,
     ValuationAgentOutput,
     ValuationOutput,
 )
@@ -27,6 +28,10 @@ class AgentStateTest(unittest.TestCase):
         fundamentals = FundamentalsOutput(narrative="基本面分析", concerns=[])
         valuation_agent = ValuationAgentOutput(narrative="估值分析")
         valuation = ValuationOutput(narrative="估值分析")
+        synthesis = SynthesisOutput(
+            summary="摘要",
+            investment_recommendation="投资建议",
+        )
 
         self.assertEqual(
             set(type(fundamentals_agent).model_fields),
@@ -41,6 +46,10 @@ class AgentStateTest(unittest.TestCase):
         self.assertIsNone(valuation.pe_ratio)
         self.assertIsNone(valuation.pb_ratio)
         self.assertIsNone(valuation.ps_ratio)
+        self.assertEqual(
+            set(type(synthesis).model_fields),
+            {"summary", "investment_recommendation"},
+        )
 
     def test_valuation_agent_output_rejects_unknown_market_evidence_id(self) -> None:
         with self.assertRaises(ValidationError):
@@ -214,8 +223,7 @@ class AgentStateTest(unittest.TestCase):
                 "fundamentals",
                 "valuation",
                 "risk",
-                "final_report",
-                "cited_evidence_ids",
+                "synthesis",
             },
         )
 

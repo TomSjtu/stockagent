@@ -4,10 +4,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import ANY, patch
 
-from stockagent.agents.orchestrator import GeneratedReport
 from stockagent.app import run_stock_analysis
 from stockagent.config import AppConfig, CLIOptions, LLMConfig
 from stockagent.errors import ConfigurationError
+from stockagent.report.delivery import GeneratedReport
 from stockagent.report.evidence import EvidenceBundle
 from stockagent.report.writer import ReportArtifacts
 
