@@ -14,6 +14,7 @@ from stockagent.agents.state import (
     IndustryOutput,
     MarketInputs,
     RiskOutput,
+    SynthesisOutput,
     ValuationAgentOutput,
     ValuationOutput,
 )
@@ -322,6 +323,13 @@ class AnalysisNodesTest(unittest.TestCase):
         self.assertIn("## 数据口径", result["final_report"])
         self.assertIn("## 免责声明", result["final_report"])
         self.assertEqual(result["cited_evidence_ids"], [])
+        self.assertEqual(
+            result["synthesis"],
+            SynthesisOutput(
+                summary="摘要正文",
+                investment_recommendation="投资建议正文",
+            ),
+        )
         self.assertIsNotNone(model.output_type)
 
     def test_synthesize_node_renders_citations_and_records_cited_evidence(self) -> None:
@@ -375,6 +383,7 @@ class AnalysisNodesTest(unittest.TestCase):
             result["final_report"],
         )
         self.assertEqual(result["cited_evidence_ids"], ["industry-1"])
+        self.assertEqual(result["synthesis"].summary, "摘要正文")
 
 
 if __name__ == "__main__":

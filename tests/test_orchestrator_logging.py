@@ -11,6 +11,7 @@ from stockagent.agents.state import (
     FundamentalsOutput,
     IndustryOutput,
     RiskOutput,
+    SynthesisOutput,
     ValuationOutput,
 )
 from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
@@ -45,8 +46,10 @@ class OrchestratorRunnerTest(unittest.TestCase):
         )
         graph = FakeGraph(
             {
-                "final_report": "# Final Report\n\n行业结论[^1]\n",
-                "cited_evidence_ids": ["industry-1"],
+                "ticker": "nvda",
+                "years": 3,
+                "final_report": "旧报告不应被读取",
+                "cited_evidence_ids": ["旧引用不应被读取"],
                 "industry": IndustryOutput(narrative="industry", evidence=[evidence]),
                 "fundamentals": FundamentalsOutput(
                     narrative="fundamentals",
@@ -64,6 +67,10 @@ class OrchestratorRunnerTest(unittest.TestCase):
                     key_risks=[],
                     evidence=[],
                 ),
+                "synthesis": SynthesisOutput(
+                    summary="行业结论 [industry-1]",
+                    investment_recommendation="保持观察",
+                ),
             }
         )
 
@@ -74,7 +81,9 @@ class OrchestratorRunnerTest(unittest.TestCase):
         ):
             report = run_stock_analysis_agent("nvda", 3, self.llm_config)
 
-        self.assertEqual(report.markdown, "# Final Report\n\n行业结论[^1]\n")
+        self.assertIn("# NVDA 研究报告", report.markdown)
+        self.assertIn("## 摘要\n\n行业结论 [^1]", report.markdown)
+        self.assertIn("## 投资建议\n\n保持观察", report.markdown)
         self.assertEqual(report.evidence_bundle.evidence, [evidence])
         self.assertEqual(report.evidence_bundle.cited_evidence_ids, ["industry-1"])
         build_model.assert_called_once_with(self.llm_config)
@@ -82,15 +91,32 @@ class OrchestratorRunnerTest(unittest.TestCase):
         build_graph.assert_called_once_with("nodes")
         self.assertEqual(graph.initial_state, {"ticker": "nvda", "years": 3})
 
-    def test_run_stock_analysis_agent_rejects_missing_final_report(self) -> None:
-        graph = FakeGraph({"ticker": "NVDA", "years": 3})
+    def test_run_stock_analysis_agent_rejects_missing_synthesis(self) -> None:
+        graph = FakeGraph(
+            {
+                "ticker": "NVDA",
+                "years": 3,
+                "industry": IndustryOutput(narrative="industry", evidence=[]),
+                "fundamentals": FundamentalsOutput(
+                    narrative="fundamentals",
+                    concerns=[],
+                ),
+                "valuation": ValuationOutput(narrative="valuation"),
+                "risk": RiskOutput(
+                    narrative="risk",
+                    overall_rating="低",
+                    key_risks=[],
+                    evidence=[],
+                ),
+            }
+        )
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
             patch("stockagent.agents.orchestrator.build_analysis_nodes", return_value="nodes"),
             patch("stockagent.agents.orchestrator.build_analysis_graph", return_value=graph),
         ):
-            with self.assertRaisesRegex(AgentOutputError, "final_report"):
+            with self.assertRaisesRegex(AgentOutputError, "synthesis"):
                 run_stock_analysis_agent("NVDA", 3, self.llm_config)
 
     def test_run_stock_analysis_agent_includes_financial_filings_as_sec_evidence(self) -> None:
@@ -109,8 +135,10 @@ class OrchestratorRunnerTest(unittest.TestCase):
         )
         graph = FakeGraph(
             {
-                "final_report": "年度数据[^1]\n",
-                "cited_evidence_ids": ["sec-2024"],
+                "ticker": "nvda",
+                "years": 3,
+                "final_report": "旧报告不应被读取",
+                "cited_evidence_ids": ["旧引用不应被读取"],
                 "industry": IndustryOutput(narrative="industry", evidence=[]),
                 "fundamentals": FundamentalsOutput(
                     narrative="fundamentals",
@@ -128,6 +156,10 @@ class OrchestratorRunnerTest(unittest.TestCase):
                     overall_rating="低",
                     key_risks=[],
                     evidence=[],
+                ),
+                "synthesis": SynthesisOutput(
+                    summary="年度数据 [sec-2024]",
+                    investment_recommendation="保持观察",
                 ),
             }
         )

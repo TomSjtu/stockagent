@@ -17,6 +17,7 @@ from stockagent.agents.state import (
     IndustryOutput,
     MarketInputs,
     RiskOutput,
+    SynthesisOutput,
     ValuationAgentOutput,
     ValuationOutput,
 )
@@ -29,6 +30,7 @@ from stockagent.financials import (
     SecFilingReference,
 )
 from stockagent.report.composer import AnnualFinancialSnapshot
+from stockagent.report.delivery import deliver_report
 
 
 class AnalysisGraphTest(unittest.TestCase):
@@ -80,7 +82,13 @@ class AnalysisGraphTest(unittest.TestCase):
 
         def synthesize(state: dict) -> dict:
             observed_inputs["synthesize"] = set(state)
-            return {"final_report": f"# Report\n\n{state['risk'].narrative}"}
+            return {
+                "synthesis": SynthesisOutput(
+                    summary=state["risk"].narrative,
+                    investment_recommendation="recommendation",
+                ),
+                "final_report": f"# Report\n\n{state['risk'].narrative}",
+            }
 
         graph = build_analysis_graph(
             AnalysisNodes(
@@ -101,6 +109,10 @@ class AnalysisGraphTest(unittest.TestCase):
         self.assertEqual(
             result["final_report"],
             "# Report\n\nAAPL industry; 3 years fundamentals",
+        )
+        self.assertEqual(
+            result["synthesis"].summary,
+            "AAPL industry; 3 years fundamentals",
         )
         self.assertEqual(observed_inputs["industry"], {"ticker", "years"})
         self.assertEqual(observed_inputs["fundamentals"], {"ticker", "years"})
@@ -165,7 +177,13 @@ class AnalysisGraphTest(unittest.TestCase):
             }
 
         def synthesize(_state: dict) -> dict:
-            return {"final_report": "# Report"}
+            return {
+                "synthesis": SynthesisOutput(
+                    summary="summary",
+                    investment_recommendation="recommendation",
+                ),
+                "final_report": "# Report",
+            }
 
         graph = build_analysis_graph(
             AnalysisNodes(
@@ -417,11 +435,13 @@ class ReportCompositionFlowTest(unittest.TestCase):
 
         result = graph.invoke({"ticker": "aapl", "years": 2})
 
-        markdown = result["final_report"]
+        delivery = deliver_report(result)
+        markdown = delivery.markdown
         output_type = model.output_type
         if output_type is None:
             self.fail("汇总模型未请求结构化输出")
         self.assertEqual(output_type.__name__, "SynthesisOutput")
+        self.assertEqual(result["synthesis"].summary, "摘要正文 [risk-1]")
         self.assertIn("只生成摘要和投资建议", model.messages[0]["content"])
         self._assert_section_order(
             markdown,
@@ -445,9 +465,14 @@ class ReportCompositionFlowTest(unittest.TestCase):
         self.assertIn("投资建议正文 [^2]", markdown)
         self.assertNotIn("[industry-1]", markdown)
         self.assertNotIn("[sec-2023]", markdown)
+        self.assertEqual(markdown, result["final_report"])
         self.assertEqual(
-            result["cited_evidence_ids"],
+            delivery.evidence_bundle.cited_evidence_ids,
             ["risk-1", "industry-1", "sec-2023", "sec-2024", "valuation-1"],
+        )
+        self.assertEqual(
+            delivery.evidence_bundle.cited_evidence_ids,
+            result["cited_evidence_ids"],
         )
         self.assertLess(markdown.index("## 免责声明"), markdown.index("## 参考来源"))
 

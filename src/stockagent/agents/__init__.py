@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from stockagent.config import LLMConfig
 
 if TYPE_CHECKING:
-    from stockagent.agents.orchestrator import GeneratedReport
+    from stockagent.report.delivery import GeneratedReport
 
 __all__ = ["run_stock_analysis_agent"]
 
