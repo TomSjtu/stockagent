@@ -6,7 +6,6 @@ from stockagent.financials import FinancialRecord
 from stockagent.fundamentals import (
     GrowthInput,
     build_growth_inputs,
-    compute_growth,
     compute_growth_series,
 )
 
@@ -33,25 +32,6 @@ class GrowthInputTest(unittest.TestCase):
 
 
 class GrowthMetricsTest(unittest.TestCase):
-    def test_compute_growth_returns_empty_growth_fields_for_single_year_input(self) -> None:
-        growth_input = GrowthInput(
-            fiscal_year=2024,
-            revenue=120.0,
-            net_income=24.0,
-            operating_cash_flow=40.0,
-            capex=10.0,
-        )
-
-        metrics = compute_growth(growth_input)
-
-        self.assertEqual(metrics.fiscal_year, 2024)
-        self.assertIsNone(metrics.revenue_growth)
-        self.assertIsNone(metrics.net_income_growth)
-        self.assertIsNone(metrics.free_cash_flow_growth)
-        self.assertIsNone(metrics.revenue_cagr)
-        self.assertIsNone(metrics.net_income_cagr)
-        self.assertIsNone(metrics.free_cash_flow_cagr)
-
     def test_compute_growth_series_calculates_yoy_growth_and_cagr(self) -> None:
         records = [
             FinancialRecord(

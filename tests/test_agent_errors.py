@@ -10,13 +10,13 @@ from stockagent.agents.errors import (
     LLMResponseError,
     LLMTimeoutError,
 )
-from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
-from stockagent.errors import ConfigurationError
-from stockagent.llm import (
+from stockagent.agents.llm import (
     _is_native_openai_base_url,
     build_model,
     build_openai_model,
 )
+from stockagent.config import DEFAULT_LLM_MODEL, LLMConfig
+from stockagent.errors import ConfigurationError
 
 
 class FakeGraph:
@@ -49,7 +49,7 @@ class AgentErrorsTest(unittest.TestCase):
         )
 
         with patch(
-            "stockagent.llm.build_openai_model",
+            "stockagent.agents.llm.build_openai_model",
             return_value="openai-model",
         ) as build_openai_model:
             model = build_model(llm_config)

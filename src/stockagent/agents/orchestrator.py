@@ -17,6 +17,7 @@ from stockagent.agents.facts import (
 )
 from stockagent.agents.fundamentals_agent import build_fundamentals_agent
 from stockagent.agents.industry_agent import build_industry_agent
+from stockagent.agents.llm import build_model
 from stockagent.agents.risk_agent import build_risk_agent
 from stockagent.agents.state import (
     AnalysisState,
@@ -32,7 +33,6 @@ from stockagent.agents.subagent_progress import AgentProgressCallbackHandler
 from stockagent.agents.valuation_agent import build_valuation_agent
 from stockagent.config import LLMConfig
 from stockagent.errors import StockAgentError
-from stockagent.llm import build_model
 from stockagent.observability import get_logger
 from stockagent.report.delivery import GeneratedReport, deliver_report
 

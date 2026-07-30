@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TypedDict as _TypedDict
 
-from stockagent import api as _api
+from stockagent.fundamentals import analysis as _analysis
 from stockagent.financials import SecFilingReference as _SecFilingReference
 from stockagent.report.composer import (
     AnnualFinancialSnapshot as _AnnualFinancialSnapshot,
@@ -27,7 +27,7 @@ def build_fundamentals_facts(
     years: int,
 ) -> _FundamentalsFacts:
     """Build report-facing fundamentals facts from the typed financial analysis."""
-    analysis = _api.analyze(ticker, years)
+    analysis = _analysis.analyze_fundamentals(ticker, years)
     snapshots: list[_AnnualFinancialSnapshot] = []
     filings: list[_SecFilingReference] = []
     for record in sorted(analysis.records, key=lambda item: item.fiscal_year):
@@ -65,8 +65,8 @@ def build_valuation_facts(
     market_cap: float | None,
 ) -> _ValuationFacts:
     """Build report-facing valuation facts from declared market inputs."""
-    analysis = _api.analyze(ticker, years)
-    valuation = _api.compute_valuation(
+    analysis = _analysis.analyze_fundamentals(ticker, years)
+    valuation = _analysis.analyze_valuation(
         tuple(analysis.records),
         price=price,
         market_cap=market_cap,

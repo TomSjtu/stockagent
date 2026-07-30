@@ -3,7 +3,7 @@ from stockagent.fundamentals.financial_health import (
     compute_financial_health,
     compute_financial_health_series,
 )
-from stockagent.fundamentals.growth import compute_growth, compute_growth_series
+from stockagent.fundamentals.growth import compute_growth_series
 from stockagent.fundamentals.inputs import (
     CashFlowInput,
     FinancialHealthInput,
@@ -37,7 +37,6 @@ __all__ = [
     "compute_cash_flow_series",
     "compute_financial_health",
     "compute_financial_health_series",
-    "compute_growth",
     "compute_growth_series",
     "compute_profitability",
     "compute_profitability_series",

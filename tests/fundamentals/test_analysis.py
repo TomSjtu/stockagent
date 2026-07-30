@@ -3,17 +3,17 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from stockagent import api
+from stockagent.fundamentals import analysis
 from stockagent.data.errors import MissingFiscalYearsError, NoDataError
 from stockagent.financials import FinancialRecord
 
 
-class ApiTest(unittest.TestCase):
+class AnalysisTest(unittest.TestCase):
     def test_fetch_financials_rejects_invalid_years(self) -> None:
         for years in (0, -1, 1.5, "3", True):
             with self.subTest(years=years):
                 with self.assertRaisesRegex(ValueError, "positive integer"):
-                    api.fetch_financials("aapl", years)
+                    analysis.fetch_financials("aapl", years)
 
     def test_fetch_financials_normalizes_ticker_and_returns_sorted_window(self) -> None:
         records = [
@@ -29,7 +29,7 @@ class ApiTest(unittest.TestCase):
         ):
             provider_type.return_value.fetch_annual_records.return_value = records
 
-            result = api.fetch_financials("contractsort", 3)
+            result = analysis.fetch_financials("contractsort", 3)
 
         self.assertIsInstance(result, tuple)
         self.assertEqual([record.fiscal_year for record in result], [2023, 2024, 2025])
@@ -52,7 +52,7 @@ class ApiTest(unittest.TestCase):
             provider_type.return_value.fetch_annual_records.return_value = records
 
             with self.assertRaises(MissingFiscalYearsError) as raised:
-                api.fetch_financials("contractgap", 3)
+                analysis.fetch_financials("contractgap", 3)
 
         self.assertEqual(raised.exception.ticker, "CONTRACTGAP")
         self.assertEqual(raised.exception.provider, "edgar")
@@ -74,7 +74,7 @@ class ApiTest(unittest.TestCase):
         ):
             provider_type.return_value.fetch_annual_records.return_value = records
 
-            result = api.fetch_financials("contractfields", 1)
+            result = analysis.fetch_financials("contractfields", 1)
 
         self.assertIsNone(result[0].revenue)
 
@@ -86,7 +86,7 @@ class ApiTest(unittest.TestCase):
             provider_type.return_value.fetch_annual_records.return_value = []
 
             with self.assertRaises(NoDataError) as raised:
-                api.fetch_financials("contractempty", 1)
+                analysis.fetch_financials("contractempty", 1)
 
         self.assertEqual(raised.exception.ticker, "CONTRACTEMPTY")
         self.assertEqual(raised.exception.provider, "edgar")
@@ -111,14 +111,14 @@ class ApiTest(unittest.TestCase):
 
             for _ in range(2):
                 with self.assertRaises(MissingFiscalYearsError):
-                    api.fetch_financials("contractcache", 3)
+                    analysis.fetch_financials("contractcache", 3)
 
         provider_type.return_value.fetch_annual_records.assert_called_once_with(
             "CONTRACTCACHE",
             years=3,
         )
 
-    def test_compute_valuation_uses_latest_fiscal_year(self) -> None:
+    def test_analyze_valuation_uses_latest_fiscal_year(self) -> None:
         records = (
             FinancialRecord(
                 ticker="AAPL",
@@ -140,7 +140,7 @@ class ApiTest(unittest.TestCase):
             ),
         )
 
-        metrics = api.compute_valuation(records, price=40.0, market_cap=200.0)
+        metrics = analysis.analyze_valuation(records, price=40.0, market_cap=200.0)
 
         self.assertEqual(metrics.fiscal_year, 2024)
         self.assertEqual(metrics.pe_ratio, 20.0)

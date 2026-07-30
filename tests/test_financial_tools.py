@@ -6,7 +6,7 @@ from datetime import date
 from unittest.mock import patch
 
 from stockagent import tools
-from stockagent.api import AnalysisResult
+from stockagent.fundamentals.analysis import FundamentalsAnalysis
 from stockagent.data.errors import MissingFiscalYearsError
 from stockagent.financials import (
     FinancialRecord,
@@ -40,7 +40,7 @@ class FinancialToolsTest(unittest.TestCase):
         ):
             with self.subTest(tool=tool.__name__):
                 with patch(
-                    "stockagent.tools.financials.api.fetch_financials",
+                    "stockagent.tools.financials.analysis.fetch_financials",
                     side_effect=error,
                 ):
                     with self.assertRaises(MissingFiscalYearsError) as raised:
@@ -74,7 +74,7 @@ class FinancialToolsTest(unittest.TestCase):
         )
 
         with patch(
-            "stockagent.tools.financials.api.fetch_financials", return_value=records
+            "stockagent.tools.financials.analysis.fetch_financials", return_value=records
         ):
             payload = json.loads(fetch_company_financials("aapl", 1))
 
@@ -95,10 +95,10 @@ class FinancialToolsTest(unittest.TestCase):
 
         with (
             patch(
-                "stockagent.tools.financials.api.fetch_financials", return_value=records
+                "stockagent.tools.financials.analysis.fetch_financials", return_value=records
             ),
             patch(
-                "stockagent.tools.financials.api.compute_profitability",
+                "stockagent.tools.financials.analysis.analyze_profitability",
                 return_value={
                     2024: ProfitabilityMetrics(fiscal_year=2024, gross_margin=0.42)
                 },
@@ -127,11 +127,11 @@ class FinancialToolsTest(unittest.TestCase):
 
         with (
             patch(
-                "stockagent.tools.financials.api.fetch_financials",
+                "stockagent.tools.financials.analysis.fetch_financials",
                 return_value=records,
             ),
             patch(
-                "stockagent.tools.financials.api.compute_valuation",
+                "stockagent.tools.financials.analysis.analyze_valuation",
                 return_value=metrics,
             ),
         ):
@@ -176,11 +176,11 @@ class FinancialToolsTest(unittest.TestCase):
 
         with (
             patch(
-                "stockagent.tools.financials.api.fetch_financials",
+                "stockagent.tools.financials.analysis.fetch_financials",
                 return_value=records,
             ),
             patch(
-                "stockagent.tools.financials.api.compute_valuation",
+                "stockagent.tools.financials.analysis.analyze_valuation",
                 return_value=metrics,
             ),
         ):
@@ -209,7 +209,7 @@ class FinancialToolsTest(unittest.TestCase):
             primary_document="annual-report.htm",
             url="https://www.sec.gov/Archives/example/annual-report.htm",
         )
-        result = AnalysisResult(
+        result = FundamentalsAnalysis(
             ticker="AAPL",
             records=[
                 FinancialRecord(
@@ -225,7 +225,7 @@ class FinancialToolsTest(unittest.TestCase):
             growth={},
         )
 
-        with patch("stockagent.tools.financials.api.analyze", return_value=result):
+        with patch("stockagent.tools.financials.analysis.analyze_fundamentals", return_value=result):
             payload = json.loads(get_fundamentals_analysis("aapl", 1))
 
         serialized_filing = payload["records"][0]["filing"]

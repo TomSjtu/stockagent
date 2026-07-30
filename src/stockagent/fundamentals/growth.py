@@ -30,11 +30,6 @@ def _free_cash_flow(gi: GrowthInput) -> float | None:
     return compute_free_cash_flow(gi.operating_cash_flow, gi.capex)
 
 
-def compute_growth(gi: GrowthInput) -> GrowthMetrics:
-    """Compute growth metrics for a single fiscal year."""
-    return compute_growth_series([gi])[0]
-
-
 def compute_growth_series(inputs: list[GrowthInput]) -> list[GrowthMetrics]:
     """Compute YoY growth and CAGR metrics for multiple years."""
     # 按 fiscal_year 排序；首项作为 CAGR 起点，前一项作为同比基数

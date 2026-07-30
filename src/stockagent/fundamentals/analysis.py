@@ -13,20 +13,18 @@ from stockagent.financials import (
     ProfitabilityMetrics,
     ValuationMetrics,
 )
-from stockagent.fundamentals import (
+from stockagent.fundamentals.cash_flow import compute_cash_flow_series
+from stockagent.fundamentals.financial_health import compute_financial_health_series
+from stockagent.fundamentals.growth import compute_growth_series
+from stockagent.fundamentals.inputs import (
     build_cash_flow_inputs,
     build_financial_health_inputs,
     build_growth_inputs,
     build_profitability_inputs,
     build_valuation_input,
-    compute_cash_flow_series,
-    compute_financial_health_series,
-    compute_growth_series,
-    compute_profitability_series,
 )
-from stockagent.fundamentals import (
-    compute_valuation as compute_valuation_from_input,
-)
+from stockagent.fundamentals.profitability import compute_profitability_series
+from stockagent.fundamentals.valuation import compute_valuation
 
 MetricT = TypeVar("MetricT", bound="HasFiscalYear")
 
@@ -38,8 +36,8 @@ class HasFiscalYear(Protocol):
 
 
 @dataclass(slots=True)
-class AnalysisResult:
-    """Deterministic annual analysis returned by the financial application API."""
+class FundamentalsAnalysis:
+    """Deterministic annual fundamentals analysis for one ticker."""
 
     # 规范化为大写的请求股票代码
     ticker: str
@@ -113,7 +111,7 @@ def _complete_fiscal_year_window(
     )
 
 
-def compute_profitability(
+def analyze_profitability(
     records: tuple[FinancialRecord, ...],
 ) -> dict[int, ProfitabilityMetrics]:
     """Compute profitability metrics indexed by fiscal year."""
@@ -122,12 +120,12 @@ def compute_profitability(
     )
 
 
-def compute_growth(records: tuple[FinancialRecord, ...]) -> dict[int, GrowthMetrics]:
+def analyze_growth(records: tuple[FinancialRecord, ...]) -> dict[int, GrowthMetrics]:
     """Compute growth metrics indexed by fiscal year."""
     return _index_by_year(compute_growth_series(build_growth_inputs(list(records))))
 
 
-def compute_cash_flow(
+def analyze_cash_flow(
     records: tuple[FinancialRecord, ...],
 ) -> dict[int, CashFlowMetrics]:
     """Compute cash-flow metrics indexed by fiscal year."""
@@ -136,7 +134,7 @@ def compute_cash_flow(
     )
 
 
-def compute_financial_health(
+def analyze_financial_health(
     records: tuple[FinancialRecord, ...],
 ) -> dict[int, FinancialHealthMetrics]:
     """Compute financial-health metrics indexed by fiscal year."""
@@ -145,7 +143,7 @@ def compute_financial_health(
     )
 
 
-def compute_valuation(
+def analyze_valuation(
     records: tuple[FinancialRecord, ...],
     price: float | None = None,
     market_cap: float | None = None,
@@ -154,19 +152,19 @@ def compute_valuation(
     # 选择 records 中 fiscal_year 最大的记录，再连同市场输入投影为 ValuationInput
     latest = max(records, key=lambda record: record.fiscal_year)
     valuation_input = build_valuation_input(latest, price, market_cap)
-    return compute_valuation_from_input(valuation_input)
+    return compute_valuation(valuation_input)
 
 
-def analyze(ticker: str, years: int = 3) -> AnalysisResult:
-    """Fetch records and compute the complete deterministic analysis."""
+def analyze_fundamentals(ticker: str, years: int = 3) -> FundamentalsAnalysis:
+    """Fetch records and compute the complete deterministic fundamentals analysis."""
     records = fetch_financials(ticker, years)
-    return AnalysisResult(
+    return FundamentalsAnalysis(
         ticker=ticker.upper(),
         records=list(records),
-        profitability=compute_profitability(records),
-        cash_flow=compute_cash_flow(records),
-        financial_health=compute_financial_health(records),
-        growth=compute_growth(records),
+        profitability=analyze_profitability(records),
+        cash_flow=analyze_cash_flow(records),
+        financial_health=analyze_financial_health(records),
+        growth=analyze_growth(records),
     )
 
 

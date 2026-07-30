@@ -21,7 +21,7 @@ from stockagent.agents.state import (
     ValuationAgentOutput,
     ValuationOutput,
 )
-from stockagent.api import AnalysisResult
+from stockagent.fundamentals.analysis import FundamentalsAnalysis
 from stockagent.financials import (
     CashFlowMetrics,
     FinancialRecord,
@@ -206,7 +206,7 @@ class ReportCompositionFlowTest(unittest.TestCase):
     def test_real_nodes_project_financials_through_graph_to_report(self) -> None:
         filing_2023 = self._filing(2023)
         filing_2024 = self._filing(2024)
-        analysis = AnalysisResult(
+        analysis = FundamentalsAnalysis(
             ticker="AAPL",
             records=[
                 FinancialRecord(
@@ -323,7 +323,7 @@ class ReportCompositionFlowTest(unittest.TestCase):
                 "stockagent.agents.orchestrator.build_risk_agent",
                 return_value=FakeAgent(agent_results["risk"]),
             ),
-            patch("stockagent.agents.facts._api.analyze", return_value=analysis),
+            patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis),
         ):
             graph = build_analysis_graph(build_analysis_nodes(model))
             result = graph.invoke({"ticker": "aapl", "years": 2})

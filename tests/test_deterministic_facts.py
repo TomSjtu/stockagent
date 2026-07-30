@@ -9,7 +9,7 @@ from stockagent.agents.facts import (
     build_fundamentals_facts,
     build_valuation_facts,
 )
-from stockagent.api import AnalysisResult
+from stockagent.fundamentals.analysis import FundamentalsAnalysis
 from stockagent.financials import (
     CashFlowMetrics,
     FinancialRecord,
@@ -32,7 +32,7 @@ class DeterministicFactsTest(unittest.TestCase):
     ) -> None:
         filing_2023 = self._filing(2023)
         filing_2024 = self._filing(2024)
-        analysis = AnalysisResult(
+        analysis = FundamentalsAnalysis(
             ticker="AAPL",
             records=[
                 FinancialRecord(
@@ -79,7 +79,7 @@ class DeterministicFactsTest(unittest.TestCase):
             },
         )
 
-        with patch("stockagent.agents.facts._api.analyze", return_value=analysis) as analyze:
+        with patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis) as analyze:
             result = build_fundamentals_facts("aapl", 2)
 
         analyze.assert_called_once_with("aapl", 2)
@@ -120,7 +120,7 @@ class DeterministicFactsTest(unittest.TestCase):
             FinancialRecord("AAPL", "Apple Inc.", 2024)
         )
 
-        with patch("stockagent.agents.facts._api.analyze", return_value=analysis):
+        with patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis):
             result = build_fundamentals_facts("AAPL", 1)
 
         self.assertEqual(result["financial_filings"], [])
@@ -140,7 +140,7 @@ class DeterministicFactsTest(unittest.TestCase):
             )
         )
 
-        with patch("stockagent.agents.facts._api.analyze", return_value=analysis):
+        with patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis):
             result = build_fundamentals_facts("AAPL", 1)
 
         self.assertEqual(result["financial_filings"], [])
@@ -162,7 +162,7 @@ class DeterministicFactsTest(unittest.TestCase):
             )
         )
 
-        with patch("stockagent.agents.facts._api.analyze", return_value=analysis) as analyze:
+        with patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis) as analyze:
             result = build_valuation_facts(
                 "aapl",
                 3,
@@ -185,7 +185,7 @@ class DeterministicFactsTest(unittest.TestCase):
             FinancialRecord("AAPL", "Apple Inc.", 2024)
         )
 
-        with patch("stockagent.agents.facts._api.analyze", return_value=analysis):
+        with patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis):
             result = build_valuation_facts(
                 "AAPL",
                 1,
@@ -205,9 +205,9 @@ class DeterministicFactsTest(unittest.TestCase):
     @staticmethod
     def _single_year_fundamentals_analysis(
         record: FinancialRecord,
-    ) -> AnalysisResult:
+    ) -> FundamentalsAnalysis:
         fiscal_year = record.fiscal_year
-        return AnalysisResult(
+        return FundamentalsAnalysis(
             ticker=record.ticker,
             records=[record],
             profitability={
