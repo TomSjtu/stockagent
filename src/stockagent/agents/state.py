@@ -150,7 +150,3 @@ class AnalysisState(TypedDict):
     risk: NotRequired[RiskOutput]
     # synthesize 节点写入的摘要与投资建议叙事片段
     synthesis: NotRequired[SynthesisOutput]
-    # synthesize 节点写入的、已替换脚注标记的完整 Markdown 报告
-    final_report: NotRequired[str]
-    # synthesize 节点写入的证据 ID 列表，顺序与 Markdown 脚注编号一致
-    cited_evidence_ids: NotRequired[list[str]]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import cast
 from unittest.mock import patch
 
 from langchain_core.messages import ToolMessage
@@ -8,7 +9,6 @@ from langchain_core.messages import ToolMessage
 from stockagent.agents.errors import AgentOutputError
 from stockagent.agents.orchestrator import build_analysis_nodes
 from stockagent.agents.state import (
-    Evidence,
     FundamentalsAgentOutput,
     FundamentalsOutput,
     IndustryOutput,
@@ -282,7 +282,7 @@ class AnalysisNodesTest(unittest.TestCase):
                 }
             )
 
-    def test_synthesize_node_composes_report_from_structured_model_output(self) -> None:
+    def test_synthesize_node_returns_narrative_fragments(self) -> None:
         nodes, _agents, model = self._build_nodes(
             industry_result={},
             fundamentals_result={},
@@ -316,24 +316,19 @@ class AnalysisNodesTest(unittest.TestCase):
 
         result = nodes.synthesize(state)
 
-        self.assertIn("# AAPL 研究报告", result["final_report"])
-        self.assertIn("## 摘要\n\n摘要正文", result["final_report"])
-        self.assertIn("## 行业分析\n\nindustry", result["final_report"])
-        self.assertIn("## 投资建议\n\n投资建议正文", result["final_report"])
-        self.assertIn("## 数据口径", result["final_report"])
-        self.assertIn("## 免责声明", result["final_report"])
-        self.assertEqual(result["cited_evidence_ids"], [])
         self.assertEqual(
-            result["synthesis"],
-            SynthesisOutput(
-                summary="摘要正文",
-                investment_recommendation="投资建议正文",
-            ),
+            result,
+            {
+                "synthesis": SynthesisOutput(
+                    summary="摘要正文",
+                    investment_recommendation="投资建议正文",
+                )
+            },
         )
         self.assertIsNotNone(model.output_type)
 
-    def test_synthesize_node_renders_citations_and_records_cited_evidence(self) -> None:
-        nodes, _agents, _model = self._build_nodes(
+    def test_synthesize_node_prompt_contains_all_four_upstream_outputs(self) -> None:
+        nodes, _agents, model = self._build_nodes(
             industry_result={},
             fundamentals_result={},
             valuation_result={},
@@ -346,44 +341,31 @@ class AnalysisNodesTest(unittest.TestCase):
         state = {
             "ticker": "AAPL",
             "years": 3,
-            "industry": IndustryOutput(
-                narrative="行业事实[industry-1]。",
-                evidence=[
-                    Evidence(
-                        id="industry-1",
-                        kind="web",
-                        title="Industry source",
-                        url="https://example.test/industry",
-                        publisher="Example News",
-                        source_agent="industry_analyst",
-                    )
-                ],
+            "industry": IndustryOutput(narrative="行业上游输出", evidence=[]),
+            "fundamentals": FundamentalsOutput(
+                narrative="基本面上游输出",
+                concerns=["收入增长放缓"],
             ),
-            "fundamentals": FundamentalsOutput(narrative="fundamentals", concerns=[]),
-            "valuation": ValuationOutput(
-                narrative="valuation",
-                pe_ratio=None,
-                pb_ratio=None,
-                ps_ratio=None,
-            ),
+            "valuation": ValuationOutput(narrative="估值上游输出"),
             "risk": RiskOutput(
-                narrative="risk",
+                narrative="风险上游输出",
                 overall_rating="低",
-                key_risks=[],
+                key_risks=["需求波动"],
                 evidence=[],
             ),
         }
 
-        result = nodes.synthesize(state)
+        nodes.synthesize(state)
 
-        self.assertIn("## 行业分析\n\n行业事实[^1]。", result["final_report"])
-        self.assertIn("## 参考来源\n\n", result["final_report"])
-        self.assertIn(
-            "[^1]: Example News｜Industry source｜https://example.test/industry",
-            result["final_report"],
-        )
-        self.assertEqual(result["cited_evidence_ids"], ["industry-1"])
-        self.assertEqual(result["synthesis"].summary, "摘要正文")
+        self.assertIsInstance(model.payload, list)
+        prompt = cast(list[dict[str, str]], model.payload)[0]["content"]
+        for output in [
+            state["industry"],
+            state["fundamentals"],
+            state["valuation"],
+            state["risk"],
+        ]:
+            self.assertIn(output.model_dump_json(indent=2), prompt)
 
 
 if __name__ == "__main__":

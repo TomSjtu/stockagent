@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
 from typing import Any, TypeVar
 
 from langchain_core.language_models import BaseChatModel
@@ -35,14 +34,7 @@ from stockagent.config import LLMConfig
 from stockagent.errors import StockAgentError
 from stockagent.llm import build_model
 from stockagent.observability import get_logger
-from stockagent.report.citations import render_citations
-from stockagent.report.composer import ReportComposer, ReportContent
-from stockagent.report.delivery import (
-    GeneratedReport,
-    _collect_evidence,
-    _state_output,
-    deliver_report,
-)
+from stockagent.report.delivery import GeneratedReport, deliver_report
 
 
 @dataclass(frozen=True)
@@ -57,7 +49,7 @@ class AnalysisNodes:
     valuation: StateNode
     # 调用风险 Agent 并返回 {"risk": RiskOutput} 的节点
     risk: StateNode
-    # 汇总上游输出并返回叙事片段及兼容期旧交付字段的节点
+    # 汇总上游输出并返回摘要与投资建议叙事片段的节点
     synthesize: StateNode
 
 
@@ -190,8 +182,8 @@ def _build_risk_node(agent: Any) -> StateNode:
 
 
 def _build_synthesize_node(model: BaseChatModel) -> StateNode:
-    """Build a node that creates summary fragments and composes the final report."""
-    def synthesize(state: AnalysisState) -> dict[str, object]:
+    """Build a node that generates summary and recommendation fragments."""
+    def synthesize(state: AnalysisState) -> dict[str, SynthesisOutput]:
         logger = get_logger(__name__)
         logger.info("主 agent 开始汇总最终报告")
         response = model.with_structured_output(SynthesisOutput).invoke(
@@ -214,35 +206,8 @@ def _build_synthesize_node(model: BaseChatModel) -> StateNode:
             ]
         )
         synthesis = _extract_synthesis_output(response)
-        industry = _state_output(state, "industry", IndustryOutput)
-        fundamentals = _state_output(state, "fundamentals", FundamentalsOutput)
-        valuation = _state_output(state, "valuation", ValuationOutput)
-        risk = _state_output(state, "risk", RiskOutput)
-        report = ReportComposer().compose(
-            ReportContent(
-                ticker=state["ticker"],
-                report_date=date.today(),
-                summary=synthesis.summary,
-                industry_analysis=industry.narrative,
-                fundamentals_analysis=fundamentals.narrative,
-                valuation_analysis=valuation.narrative,
-                risk_assessment=risk.narrative,
-                investment_recommendation=synthesis.investment_recommendation,
-                annual_financials=fundamentals.annual_financials,
-                financial_filings=fundamentals.financial_filings,
-            )
-        )
-        # 编排后的全部内部标记一次性替换为 Markdown 脚注
-        citation_result = render_citations(
-            report,
-            _collect_evidence(industry, fundamentals, valuation, risk),
-        )
         logger.info("主 agent 完成汇总最终报告")
-        return {
-            "synthesis": synthesis,
-            "final_report": citation_result.markdown,
-            "cited_evidence_ids": citation_result.cited_evidence_ids,
-        }
+        return {"synthesis": synthesis}
 
     return synthesize
 

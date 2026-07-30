@@ -224,8 +224,6 @@ class AgentStateTest(unittest.TestCase):
                 "valuation",
                 "risk",
                 "synthesis",
-                "final_report",
-                "cited_evidence_ids",
             },
         )
 
