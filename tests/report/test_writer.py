@@ -8,7 +8,6 @@ from pathlib import Path
 
 from stockagent.report.evidence import EvidenceBundle
 from stockagent.report.writer import write_report_artifacts
-from stockagent.report.writer import write_markdown_report
 
 
 class ReportWriterTest(unittest.TestCase):
@@ -18,14 +17,16 @@ class ReportWriterTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_dir = Path(temp_dir) / "output"
 
-            artifacts = write_report_artifacts(
-                "aapl",
-                "# Report\n",
-                evidence_bundle=EvidenceBundle(),
-                output_dir=output_dir,
-                report_date=date(2026, 6, 21),
-            )
+            with self.assertLogs("stockagent.report.writer", level="INFO") as logs:
+                artifacts = write_report_artifacts(
+                    "aapl",
+                    "# Report\n",
+                    evidence_bundle=EvidenceBundle(),
+                    output_dir=output_dir,
+                    report_date=date(2026, 6, 21),
+                )
 
+            self.assertTrue(output_dir.exists())
             self.assertEqual(artifacts.markdown_path.name, "AAPL-2026-06-21.md")
             self.assertEqual(
                 artifacts.sources_path.name,
@@ -36,44 +37,16 @@ class ReportWriterTest(unittest.TestCase):
             self.assertEqual(payload["ticker"], "AAPL")
             self.assertEqual(payload["report_date"], "2026-06-21")
             self.assertEqual(payload["evidence"], [])
-
-    def test_write_markdown_report_creates_output_dir_and_uses_ticker_date_name(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_dir = Path(temp_dir) / "output"
-
-            output_path = write_markdown_report(
-                "aapl",
-                "# Report\n",
-                output_dir=output_dir,
-                report_date=date(2026, 6, 21),
-            )
-
-            self.assertTrue(output_dir.exists())
-            self.assertEqual(output_path.name, "AAPL-2026-06-21.md")
-            self.assertEqual(output_path.read_text(encoding="utf-8"), "# Report\n")
-
-    def test_write_markdown_report_logs_write_stages(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            output_dir = Path(temp_dir) / "output"
-
-            with self.assertLogs("stockagent.report.writer", level="INFO") as logs:
-                output_path = write_markdown_report(
-                    "aapl",
-                    "# Report\n",
-                    output_dir=output_dir,
-                    report_date=date(2026, 6, 21),
-                )
-
             self.assertIn(
-                "INFO:stockagent.report.writer:开始写入 Markdown 报告",
+                "INFO:stockagent.report.writer:开始写入报告产物",
                 logs.output,
             )
             self.assertIn(
-                f"INFO:stockagent.report.writer:报告写入完成: {output_path}",
+                "INFO:stockagent.report.writer:报告产物写入完成: "
+                f"{artifacts.markdown_path}, {artifacts.sources_path}",
                 logs.output,
             )
+
 
 if __name__ == "__main__":
     unittest.main()
