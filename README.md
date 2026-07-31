@@ -49,16 +49,18 @@ LLM_MODEL=openai:gpt-5.5
 
 # Data providers
 TAVILY_API_KEY=tvly-...
+
+# Optional: SEC EDGAR request identity
+EDGAR_IDENTITY="stockagent stockagent@example.com"
 ```
 
 变量说明：
 
-- `LLM_API_KEY`：必填，默认 Agent 报告流程。
+- `LLM_API_KEY`：必填，供默认 Agent 报告流程调用模型。
 - `LLM_BASE_URL`：可选，用于 OpenAI 兼容接口。
-- `LLM_MODEL`：必填，模型名必须包含 provider 前缀，默认是 `openai:gpt-5.5`。
+- `LLM_MODEL`：可选，模型名必须包含 provider 前缀，默认是 `openai:gpt-5.5`。
 - `TAVILY_API_KEY`：必填，默认 Agent 报告流程，用于网页搜索工具。
-
-EDGAR 请求身份标识固定为 `stockagent stockagent@example.com`。
+- `EDGAR_IDENTITY`：可选，传给 SEC EDGAR 客户端的请求身份；默认是 `stockagent stockagent@example.com`，建议替换为可联系的应用名和邮箱。
 
 当前支持的模型构建路径是 OpenAI 兼容模型，`LLM_MODEL` 使用 `openai:<model-name>` 格式。
 
@@ -96,10 +98,13 @@ Markdown 中实际引用的网页和 SEC filing 会在文末“参考来源”�
 
 ```text
 stockagent.cli:main
-  -> app.run_stock_analysis()
-  -> load_llm_config()
-  -> agents.orchestrator.run_stock_analysis_agent()
-  -> report.writer.write_report_artifacts()
+  -> stockagent.app.run_stock_analysis()
+     -> stockagent.config.load_app_config()
+     -> edgar.set_identity()
+     -> stockagent.agents.run_stock_analysis_agent()
+        -> stockagent.agents.orchestrator.run_stock_analysis_agent()
+           -> stockagent.report.delivery.deliver_report()
+     -> stockagent.report.writer.write_report_artifacts()
 ```
 
 默认分析流程中：
@@ -116,15 +121,29 @@ stockagent.cli:main
 src/stockagent/
   cli.py                 # CLI 参数解析和入口
   app.py                 # 应用编排入口
-  config.py              # .env 和运行配置
-  api.py                 # 确定性分析和 Agent 工具统一接口
-  agents/                # LangGraph 主编排和分析 Agent
+  config.py              # .env、LLM、Tavily 和 EDGAR 运行配置
+  agents/
+    orchestrator.py      # LangGraph 拓扑、节点执行和报告交付调用
+    facts.py             # 确定性财务事实到 Agent State 的投影
+    llm.py               # LLM provider 校验和客户端构建
+    *_agent.py           # 行业、基本面、估值和风险 Agent
   tools/                 # Agent 可调用工具
   data/providers/        # EDGAR 数据提供方
-  fundamentals/          # 基本面指标计算
+  fundamentals/
+    analysis.py          # EDGAR 取数、缓存、财年校验和指标编排
+    inputs.py            # 财务记录到公式输入的投影
+    *.py                 # 盈利、现金流、健康度、成长和估值纯函数
   financials/models.py   # 财务数据模型
   report/                # 报告生成和写入
   observability.py       # 日志和流程观测
+```
+
+更完整的模块边界、数据流和扩展指南见 [`docs/architecture.md`](docs/architecture.md)。
+
+## 开发验证
+
+```bash
+uv run pytest -q
 ```
 
 ## 当前限制
