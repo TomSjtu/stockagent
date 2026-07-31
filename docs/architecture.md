@@ -146,7 +146,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | Tavily | `tools.search.web_search()` | query、topic、时间范围 | 裁剪后的 JSON 搜索结果；Agent 只保存实际采用的结果，缺 API key 抛出配置错误 |
 | 本地文件系统 | `report.writer` | ticker、已渲染 Markdown、`EvidenceBundle`、输出目录 | UTF-8 Markdown 与同名 JSON 审计附属文件 |
 
-`fundamentals.analysis._fetch_financials_cached()` 以 `(normalized_ticker, years)` 为键，使用容量 32 的进程内 LRU 缓存。缓存位于确定性分析服务层，因此多个财务工具在同一进程内请求相同窗口时不会重复访问 EDGAR。
+`fundamentals.analysis._fetch_financials_cached()` 以 `(normalized_ticker, years)` 为键，使用容量 32 的进程内 LRU 缓存。缓存位于确定性分析服务层，因此两个叙事财务工具和确定性事实处理 module 的两次调用在同一进程内请求相同窗口时不会重复访问 EDGAR。
 
 ## 4. 目录与文件索引
 
@@ -203,7 +203,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | --- | --- | --- |
 | `src/stockagent/tools/__init__.py` | 重新导出允许被 Agent 使用的搜索和财务工具。 | Agent modules 只从此包导入工具，形成清晰工具面。 |
 | `src/stockagent/tools/search.py` | 校验 Tavily key，调用 Tavily，并把原始结果裁剪成标题、URL、摘要、评分和发布日期 JSON。 | 被行业、估值、风险 Agent 调用。 |
-| `src/stockagent/tools/financials.py` | 将 `fundamentals.analysis` 的 dataclass 结果序列化为 JSON；提供取记录、单项指标、估值和聚合基本面工具。 | 被基本面与估值 Agent 调用；不直接访问 EDGAR SDK。 |
+| `src/stockagent/tools/financials.py` | 将 `fundamentals.analysis` 的 dataclass 结果序列化为 JSON；提供估值和聚合基本面工具。 | 被基本面与估值 Agent 调用；不直接访问 EDGAR SDK。 |
 
 ### 4.6 `src/stockagent/data/`：外部财务数据适配
 
@@ -260,9 +260,9 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | `tests/test_observability.py` | 日志格式、时间精度及第三方日志等级。 |
 | `tests/fundamentals/test_analysis.py` | ticker/年份校验、连续财年窗口、缓存、无数据错误和最新财年估值选择。 |
 | `tests/test_financial_models.py` | 财务记录、filing 引用和指标 dataclass 的字段与默认值契约。 |
-| `tests/test_financial_tools.py` | 财务工具 JSON 序列化、当前工具导出、估值市场输入与缺失原因。 |
+| `tests/test_financial_tools.py` | 财务工具 JSON 序列化、估值市场输入与缺失原因。 |
 | `tests/test_search_tool.py` | Tavily 调用参数与裁剪后的搜索接口。 |
-| `tests/test_agent_builders.py` | 四个 Agent builder 的工具集合、prompt 和 `ToolStrategy` 输出合同。 |
+| `tests/test_agent_builders.py` | 四个 Agent builder 的工具集合、工具面一致性不变量、prompt 和 `ToolStrategy` 输出合同。 |
 | `tests/test_agent_state.py` | LLM schema 与 State 模型拆分、确定性字段默认值、证据 ID 唯一性、市场输入证据关联、年度 filing、风险评级和 State 必填/可选字段。 |
 | `tests/test_deterministic_facts.py` | 两个公开 facts interface 的类型化投影：年度快照字段来源、缺失值、排序、filing 缺失，以及声明市场输入驱动的估值比率。 |
 | `tests/test_analysis_graph.py` | 真实 Graph builder 的完整数据流、联合 fan-in，以及从取数层到最终 Markdown 财务表和 SEC 脚注的穿透行为。 |
@@ -340,7 +340,7 @@ tests -> every production layer, but production code never imports tests
 
 ### 新增指标
 
-先在 `financials/models.py` 增加结果字段或新指标 dataclass；在 `fundamentals/inputs.py` 定义最小输入投影；再在独立纯函数模块实现计算，并由 `fundamentals/analysis.py` 选择性编排。需要暴露给 LLM 时，最后才在 `tools/financials.py` 添加 JSON 工具。
+先在 `financials/models.py` 增加结果字段或新指标 dataclass；在 `fundamentals/inputs.py` 定义最小输入投影；再在独立纯函数模块实现计算，并由 `fundamentals/analysis.py` 选择性编排。需要暴露给 LLM 时，最后才在 `tools/financials.py` 添加 JSON 工具，并在同一提交内挂到 Agent。
 
 ### 调整证据与交付
 

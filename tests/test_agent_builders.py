@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from langchain.agents.structured_output import ToolStrategy
 
+from stockagent import tools as tool_adapters
 from stockagent.agents.fundamentals_agent import build_fundamentals_agent
 from stockagent.agents.industry_agent import build_industry_agent
 from stockagent.agents.risk_agent import build_risk_agent
@@ -24,6 +25,30 @@ from stockagent.tools import (
 
 
 class AgentBuildersTest(unittest.TestCase):
+    def test_tool_exports_only_contain_adapters_attached_to_agents(self) -> None:
+        attached_tools = set()
+
+        for module, builder in (
+            ("stockagent.agents.industry_agent", build_industry_agent),
+            ("stockagent.agents.fundamentals_agent", build_fundamentals_agent),
+            ("stockagent.agents.valuation_agent", build_valuation_agent),
+            ("stockagent.agents.risk_agent", build_risk_agent),
+        ):
+            with self.subTest(module=module):
+                with patch(f"{module}.create_agent") as create_agent:
+                    builder(object())
+
+                attached_tools.update(create_agent.call_args.kwargs["tools"])
+
+        exported_tools = {
+            getattr(tool_adapters, name) for name in tool_adapters.__all__
+        }
+        self.assertEqual(
+            exported_tools,
+            attached_tools,
+            "工具导出必须与 Agent 挂载保持一致；请接线或清理工具，不要修改此断言",
+        )
+
     def test_industry_builder_uses_search_and_industry_output(self) -> None:
         self._assert_builder_contract(
             module="stockagent.agents.industry_agent",

@@ -9,57 +9,6 @@ from pydantic import BaseModel
 from stockagent.fundamentals import analysis
 
 
-def fetch_company_financials(ticker: str, years: int = 3) -> str:
-    """Fetch the validated annual financial window as a tool JSON payload."""
-    records = analysis.fetch_financials(ticker, years)
-    return _to_json(
-        {
-            "ticker": ticker.upper(),
-            "years": years,
-            "records": records,
-        }
-    )
-
-
-def compute_profitability_metrics(ticker: str, years: int = 3) -> str:
-    """Compute profitability metrics such as margins, ROA, ROE, and ROCE."""
-    records = analysis.fetch_financials(ticker, years)
-    return _metric_payload(
-        ticker,
-        years,
-        "profitability",
-        analysis.analyze_profitability(records),
-    )
-
-
-def compute_growth_metrics(ticker: str, years: int = 3) -> str:
-    """Compute revenue, net-income, and free-cash-flow growth metrics."""
-    records = analysis.fetch_financials(ticker, years)
-    return _metric_payload(ticker, years, "growth", analysis.analyze_growth(records))
-
-
-def compute_cash_flow_metrics(ticker: str, years: int = 3) -> str:
-    """Compute cash-flow metrics including free cash flow."""
-    records = analysis.fetch_financials(ticker, years)
-    return _metric_payload(
-        ticker,
-        years,
-        "cash_flow",
-        analysis.analyze_cash_flow(records),
-    )
-
-
-def compute_financial_health_metrics(ticker: str, years: int = 3) -> str:
-    """Compute leverage, liquidity, and balance-sheet health metrics."""
-    records = analysis.fetch_financials(ticker, years)
-    return _metric_payload(
-        ticker,
-        years,
-        "financial_health",
-        analysis.analyze_financial_health(records),
-    )
-
-
 def compute_valuation_metrics(
     ticker: str,
     price: float | None = None,
@@ -88,22 +37,6 @@ def get_fundamentals_analysis(ticker: str, years: int = 3) -> str:
     """Fetch records and compute all deterministic financial metrics."""
     result = analysis.analyze_fundamentals(ticker, years)
     return _to_json(result)
-
-
-def _metric_payload(
-    ticker: str,
-    years: int,
-    metric_name: str,
-    metrics: dict[int, Any],
-) -> str:
-    """Build the JSON boundary shared by deterministic metric tools."""
-    return _to_json(
-        {
-            "ticker": ticker.upper(),
-            "years": years,
-            metric_name: metrics,
-        }
-    )
 
 
 def _to_json(value: Any) -> str:

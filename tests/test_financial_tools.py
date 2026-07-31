@@ -5,7 +5,6 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from stockagent import tools
 from stockagent.fundamentals.analysis import FundamentalsAnalysis
 from stockagent.data.errors import MissingFiscalYearsError
 from stockagent.financials import (
@@ -15,12 +14,7 @@ from stockagent.financials import (
     ValuationMetrics,
 )
 from stockagent.tools import (
-    compute_cash_flow_metrics,
-    compute_financial_health_metrics,
-    compute_growth_metrics,
-    compute_profitability_metrics,
     compute_valuation_metrics,
-    fetch_company_financials,
     get_fundamentals_analysis,
 )
 
@@ -30,11 +24,6 @@ class FinancialToolsTest(unittest.TestCase):
         error = MissingFiscalYearsError("aapl", (2024,))
 
         for tool in (
-            fetch_company_financials,
-            compute_profitability_metrics,
-            compute_growth_metrics,
-            compute_cash_flow_metrics,
-            compute_financial_health_metrics,
             compute_valuation_metrics,
             get_fundamentals_analysis,
         ):
@@ -47,66 +36,6 @@ class FinancialToolsTest(unittest.TestCase):
                         tool("aapl", years=3)
 
                 self.assertIs(raised.exception, error)
-
-    def test_tools_export_the_current_adapters(self) -> None:
-        self.assertEqual(
-            set(tools.__all__),
-            {
-                "compute_cash_flow_metrics",
-                "compute_financial_health_metrics",
-                "compute_growth_metrics",
-                "compute_profitability_metrics",
-                "compute_valuation_metrics",
-                "fetch_company_financials",
-                "get_fundamentals_analysis",
-                "web_search",
-            },
-        )
-
-    def test_fetch_company_financials_serializes_records(self) -> None:
-        records = (
-            FinancialRecord(
-                ticker="AAPL",
-                company_name="Apple Inc.",
-                fiscal_year=2024,
-                revenue=100.0,
-            ),
-        )
-
-        with patch(
-            "stockagent.tools.financials.analysis.fetch_financials", return_value=records
-        ):
-            payload = json.loads(fetch_company_financials("aapl", 1))
-
-        self.assertEqual(payload["ticker"], "AAPL")
-        self.assertEqual(payload["records"][0]["fiscal_year"], 2024)
-        self.assertEqual(payload["records"][0]["revenue"], 100.0)
-
-    def test_compute_profitability_metrics_serializes_year_keys_as_strings(
-        self,
-    ) -> None:
-        records = (
-            FinancialRecord(
-                ticker="AAPL",
-                company_name="Apple Inc.",
-                fiscal_year=2024,
-            ),
-        )
-
-        with (
-            patch(
-                "stockagent.tools.financials.analysis.fetch_financials", return_value=records
-            ),
-            patch(
-                "stockagent.tools.financials.analysis.analyze_profitability",
-                return_value={
-                    2024: ProfitabilityMetrics(fiscal_year=2024, gross_margin=0.42)
-                },
-            ),
-        ):
-            payload = json.loads(compute_profitability_metrics("aapl", 1))
-
-        self.assertEqual(payload["profitability"]["2024"]["gross_margin"], 0.42)
 
     def test_compute_valuation_metrics_serializes_market_inputs(self) -> None:
         records = (
@@ -198,7 +127,7 @@ class FinancialToolsTest(unittest.TestCase):
             "missing positive market_cap/revenue",
         )
 
-    def test_get_fundamentals_analysis_serializes_record_filings(self) -> None:
+    def test_get_fundamentals_analysis_serializes_filings_and_year_keys(self) -> None:
         filing = SecFilingReference(
             form="10-K",
             fiscal_year=2024,
@@ -219,19 +148,25 @@ class FinancialToolsTest(unittest.TestCase):
                     filing=filing,
                 )
             ],
-            profitability={},
+            profitability={
+                2024: ProfitabilityMetrics(fiscal_year=2024, gross_margin=0.42)
+            },
             cash_flow={},
             financial_health={},
             growth={},
         )
 
-        with patch("stockagent.tools.financials.analysis.analyze_fundamentals", return_value=result):
+        with patch(
+            "stockagent.tools.financials.analysis.analyze_fundamentals",
+            return_value=result,
+        ):
             payload = json.loads(get_fundamentals_analysis("aapl", 1))
 
         serialized_filing = payload["records"][0]["filing"]
         self.assertEqual(serialized_filing["fiscal_year"], 2024)
         self.assertEqual(serialized_filing["period_end"], "2024-12-31")
         self.assertEqual(serialized_filing["filed_at"], "2025-02-20")
+        self.assertEqual(payload["profitability"]["2024"]["gross_margin"], 0.42)
 
 
 if __name__ == "__main__":
