@@ -79,7 +79,7 @@ class DeterministicFactsTest(unittest.TestCase):
             },
         )
 
-        with patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis) as analyze:
+        with patch("stockagent.agents.facts._analysis.analyze_fundamentals", return_value=analysis) as analyze:
             result = build_fundamentals_facts("aapl", 2)
 
         analyze.assert_called_once_with("aapl", 2)
@@ -120,7 +120,7 @@ class DeterministicFactsTest(unittest.TestCase):
             FinancialRecord("AAPL", "Apple Inc.", 2024)
         )
 
-        with patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis):
+        with patch("stockagent.agents.facts._analysis.analyze_fundamentals", return_value=analysis):
             result = build_fundamentals_facts("AAPL", 1)
 
         self.assertEqual(result["financial_filings"], [])
@@ -140,7 +140,7 @@ class DeterministicFactsTest(unittest.TestCase):
             )
         )
 
-        with patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis):
+        with patch("stockagent.agents.facts._analysis.analyze_fundamentals", return_value=analysis):
             result = build_fundamentals_facts("AAPL", 1)
 
         self.assertEqual(result["financial_filings"], [])
@@ -162,7 +162,7 @@ class DeterministicFactsTest(unittest.TestCase):
             )
         )
 
-        with patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis) as analyze:
+        with patch("stockagent.agents.facts._analysis.analyze_fundamentals", return_value=analysis) as analyze:
             result = build_valuation_facts(
                 "aapl",
                 3,
@@ -185,7 +185,7 @@ class DeterministicFactsTest(unittest.TestCase):
             FinancialRecord("AAPL", "Apple Inc.", 2024)
         )
 
-        with patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis):
+        with patch("stockagent.agents.facts._analysis.analyze_fundamentals", return_value=analysis):
             result = build_valuation_facts(
                 "AAPL",
                 1,

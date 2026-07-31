@@ -323,7 +323,7 @@ class ReportCompositionFlowTest(unittest.TestCase):
                 "stockagent.agents.orchestrator.build_risk_agent",
                 return_value=FakeAgent(agent_results["risk"]),
             ),
-            patch("stockagent.agents.facts._api.analyze_fundamentals", return_value=analysis),
+            patch("stockagent.agents.facts._analysis.analyze_fundamentals", return_value=analysis),
         ):
             graph = build_analysis_graph(build_analysis_nodes(model))
             result = graph.invoke({"ticker": "aapl", "years": 2})
