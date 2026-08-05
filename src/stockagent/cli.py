@@ -104,11 +104,16 @@ class RichProgressReporter(AbstractContextManager["RichProgressReporter"]):
         self._refresh()
         self._logger.error("agent %s 失败: %s（%s）", agent, tool, detail)
 
-    def tokens(self, agent: str, produced: int) -> None:
+    def model_output(self, agent: str, produced_characters: int) -> None:
+        activity = (
+            f"正在生成（已生成 {produced_characters} 字符）"
+            if produced_characters
+            else "正在生成（等待模型响应）"
+        )
         with self._lock:
             progress = self._agents.get(agent)
             if progress is not None:
-                progress.activity = f"正在生成（{produced}）"
+                progress.activity = activity
         self._refresh()
 
     def _render(self) -> RenderableType:

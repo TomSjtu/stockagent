@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any, TypeVar
+from typing import Any, TypedDict, TypeVar
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
@@ -19,7 +19,12 @@ from stockagent.agents.facts import (
 from stockagent.agents.fundamentals_agent import build_fundamentals_agent
 from stockagent.agents.industry_agent import build_industry_agent
 from stockagent.agents.llm import build_model
-from stockagent.agents.progress import ProgressReporter, report_agent_update
+from stockagent.agents.progress import (
+    ModelGenerationProgress,
+    ProgressReporter,
+    report_agent_update,
+    report_model_message,
+)
 from stockagent.agents.risk_agent import build_risk_agent
 from stockagent.agents.state import (
     AnalysisState,
@@ -51,6 +56,13 @@ class AnalysisNodes:
     risk: StateNode
     # 汇总上游输出并返回摘要与投资建议叙事片段的节点
     synthesize: StateNode
+
+
+class _StructuredModelState(TypedDict, total=False):
+    """Internal state used only to expose one model call's message stream."""
+
+    payload: object
+    response: object
 
 
 StructuredOutputT = TypeVar("StructuredOutputT", bound=BaseModel)
@@ -250,10 +262,13 @@ def _build_synthesize_node(
     progress_reporter: ProgressReporter,
 ) -> StateNode:
     """Build a node that generates summary and recommendation fragments."""
+    structured_model = model.with_structured_output(SynthesisOutput)
+    model_stream = _build_structured_model_stream(structured_model)
 
     def synthesize(state: AnalysisState) -> dict[str, SynthesisOutput]:
         def run() -> dict[str, SynthesisOutput]:
-            response = model.with_structured_output(SynthesisOutput).invoke(
+            response = _invoke_structured_model(
+                model_stream,
                 [
                     {
                         "role": "user",
@@ -270,7 +285,9 @@ def _build_synthesize_node(
                             f"风险评估：\n{state['risk'].model_dump_json(indent=2)}"
                         ),
                     }
-                ]
+                ],
+                agent_name="synthesize",
+                progress_reporter=progress_reporter,
             )
             synthesis = _extract_synthesis_output(response)
             return {"synthesis": synthesis}
@@ -282,6 +299,19 @@ def _build_synthesize_node(
         )
 
     return synthesize
+
+
+def _build_structured_model_stream(structured_model: Any) -> Any:
+    """Wrap one structured model call so LangGraph exposes raw message deltas."""
+
+    def generate(state: _StructuredModelState) -> dict[str, object]:
+        return {"response": structured_model.invoke(state["payload"])}
+
+    graph = StateGraph(_StructuredModelState)
+    graph.add_node("generate", generate)
+    graph.add_edge(START, "generate")
+    graph.add_edge("generate", END)
+    return graph.compile()
 
 
 def _agent_payload(content: str) -> dict[str, list[dict[str, str]]]:
@@ -297,25 +327,76 @@ def _invoke_structured_agent(
     progress_reporter: ProgressReporter,
 ) -> StructuredOutputT:
     """Stream one agent and validate its final complete state snapshot."""
-    result: object = None
-    for mode, chunk in agent.stream(
-        payload,
-        stream_mode=["updates", "values"],
-    ):
-        if mode == "updates":
-            report_agent_update(
-                chunk,
-                agent_name=agent_name,
-                progress_reporter=progress_reporter,
-            )
-        elif mode == "values":
-            result = chunk
+    result = _consume_model_stream(
+        agent.stream(
+            payload,
+            stream_mode=["updates", "values", "messages"],
+        ),
+        agent_name=agent_name,
+        progress_reporter=progress_reporter,
+        structured_output_tool=output_type.__name__,
+    )
     output = _extract_structured_response(
         result,
         agent_name=agent_name,
         output_type=output_type,
     )
     return output
+
+
+def _invoke_structured_model(
+    model_stream: Any,
+    payload: object,
+    *,
+    agent_name: str,
+    progress_reporter: ProgressReporter,
+) -> object:
+    """Stream one structured model while retaining its parsed final response."""
+    state = _consume_model_stream(
+        model_stream.stream(
+            {"payload": payload},
+            stream_mode=["messages", "values"],
+        ),
+        agent_name=agent_name,
+        progress_reporter=progress_reporter,
+    )
+    if isinstance(state, Mapping):
+        return state.get("response")
+    return None
+
+
+def _consume_model_stream(
+    events: Iterable[tuple[str, object]],
+    *,
+    agent_name: str,
+    progress_reporter: ProgressReporter,
+    structured_output_tool: str | None = None,
+) -> object:
+    """Consume model deltas and return the final complete-state snapshot."""
+    result: object = None
+    produced_characters = 0
+    with ModelGenerationProgress(
+        progress_reporter,
+        agent_name,
+    ) as generation_progress:
+        for mode, chunk in events:
+            if mode == "messages":
+                produced_characters = report_model_message(
+                    chunk,
+                    agent_name=agent_name,
+                    produced_characters=produced_characters,
+                    progress_reporter=generation_progress,
+                )
+            elif mode == "updates":
+                report_agent_update(
+                    chunk,
+                    agent_name=agent_name,
+                    progress_reporter=generation_progress,
+                    structured_output_tool=structured_output_tool,
+                )
+            elif mode == "values":
+                result = chunk
+    return result
 
 
 def _run_with_progress(

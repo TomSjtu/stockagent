@@ -549,7 +549,7 @@ class FakeProgressReporter:
     def tool_failed(self, agent: str, tool: str, detail: str) -> None:
         pass
 
-    def tokens(self, agent: str, produced: int) -> None:
+    def model_output(self, agent: str, produced_characters: int) -> None:
         pass
 
 

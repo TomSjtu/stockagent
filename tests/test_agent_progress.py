@@ -82,7 +82,7 @@ class RichProgressReporterTest(unittest.TestCase):
                 "industry_analyst",
                 "搜索市场与行业信息",
             )
-            reporter.tokens("industry_analyst", 10)
+            reporter.model_output("industry_analyst", 10)
             reporter.tool_failed(
                 "industry_analyst",
                 "搜索市场与行业信息",
