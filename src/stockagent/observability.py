@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
-import sys
+
+from rich.console import Console
+from rich.logging import RichHandler
 
 from stockagent.config import LogLevel
 
@@ -13,13 +15,26 @@ _LOG_LEVELS: dict[LogLevel, int] = {
 }
 
 
-def setup_logging(level: LogLevel = "info") -> None:
+def setup_logging(
+    level: LogLevel = "info",
+    *,
+    console: Console | None = None,
+) -> None:
     """Configure process-wide console logging for one CLI run."""
+    rich_console = console or Console(stderr=True)
     logging.basicConfig(
         level=_LOG_LEVELS[level],
-        format="[%(levelname)s] %(asctime)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        stream=sys.stderr,
+        format="%(message)s",
+        handlers=[
+            RichHandler(
+                console=rich_console,
+                show_time=True,
+                show_level=True,
+                show_path=False,
+                markup=False,
+                log_time_format="%Y-%m-%d %H:%M:%S",
+            )
+        ],
         force=True,
     )
     logging.getLogger("httpx").setLevel(

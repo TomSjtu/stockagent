@@ -28,7 +28,6 @@ def run_stock_analysis(
 
     set_identity(config.edgar_identity)
     logger.info("加载 LLM 配置完成")
-    logger.info("启动主分析 agent")
     # 调用 Agent 图，取得渲染后的 Markdown 和其 EvidenceBundle
     report = run_stock_analysis_agent(
         options.ticker,
@@ -36,7 +35,6 @@ def run_stock_analysis(
         config.llm,
         progress_reporter,
     )
-    logger.info("主分析 agent 完成")
     logger.info("开始写入报告")
     # 将同一个 date.today() 值传给交付函数，用于两个输出文件的共同名称和 manifest 日期
     return write_report_artifacts(

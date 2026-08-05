@@ -61,20 +61,24 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(stdout.getvalue(), "")
 
-    def test_main_creates_and_injects_logging_progress_reporter(self) -> None:
+    def test_main_creates_one_live_reporter_around_the_whole_workflow(self) -> None:
         progress_reporter = object()
+        reporter_context = unittest.mock.MagicMock()
+        reporter_context.__enter__.return_value = progress_reporter
 
         with (
             patch.object(sys, "argv", ["stock", "aapl"]),
             patch(
-                "stockagent.cli.LoggingProgressReporter",
-                return_value=progress_reporter,
+                "stockagent.cli.RichProgressReporter",
+                return_value=reporter_context,
             ) as reporter_type,
             patch("stockagent.cli.run_stock_analysis") as run_analysis,
         ):
             main()
 
-        reporter_type.assert_called_once_with()
+        reporter_type.assert_called_once_with(ANY)
+        reporter_context.__enter__.assert_called_once_with()
+        reporter_context.__exit__.assert_called_once()
         run_analysis.assert_called_once_with(ANY, progress_reporter)
 
 
