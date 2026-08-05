@@ -1,11 +1,40 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Protocol
 
 from langchain_core.callbacks import BaseCallbackHandler
 
 from stockagent.observability import get_logger
+
+
+class ProgressReporter(Protocol):
+    """Receive progress events without depending on a presentation library."""
+
+    def agent_started(self, agent: str) -> None:
+        """Report that one agent has started."""
+        ...
+
+    def agent_finished(self, agent: str, elapsed_seconds: float) -> None:
+        """Report that one agent has finished and include its elapsed time."""
+        ...
+
+    def tool_started(self, agent: str, tool: str, args_summary: str) -> None:
+        """Report that an agent has started one tool call."""
+        ...
+
+    def tool_finished(self, agent: str, tool: str) -> None:
+        """Report that an agent has finished one tool call."""
+        ...
+
+    def tool_failed(self, agent: str, tool: str, detail: str) -> None:
+        """Report that an agent tool call has failed."""
+        ...
+
+    def tokens(self, agent: str, produced: int) -> None:
+        """Report the amount of model output produced for one agent."""
+        ...
+
 
 _STAGE_DISPLAY_NAMES = {
     ("industry_analyst", "web_search"): "搜索市场与行业信息",

@@ -7,10 +7,14 @@ from stockagent.config import CLIOptions, load_app_config
 from stockagent.observability import get_logger
 
 if TYPE_CHECKING:
+    from stockagent.agents.progress import ProgressReporter
     from stockagent.report.writer import ReportArtifacts
 
 
-def run_stock_analysis(options: CLIOptions) -> ReportArtifacts:
+def run_stock_analysis(
+    options: CLIOptions,
+    progress_reporter: ProgressReporter,
+) -> ReportArtifacts:
     """Run one report workflow and write its paired delivery artifacts.
 
     Raises ConfigurationError when a required external-service credential is absent.
@@ -30,6 +34,7 @@ def run_stock_analysis(options: CLIOptions) -> ReportArtifacts:
         options.ticker,
         options.years,
         config.llm,
+        progress_reporter,
     )
     logger.info("主分析 agent 完成")
     logger.info("开始写入报告")

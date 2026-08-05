@@ -3,7 +3,8 @@ from __future__ import annotations
 import unittest
 from uuid import uuid4
 
-from stockagent.agents.subagent_progress import AgentProgressCallbackHandler
+from stockagent.agents.progress import AgentProgressCallbackHandler
+from stockagent.cli import LoggingProgressReporter
 
 
 class AgentProgressCallbackHandlerTest(unittest.TestCase):
@@ -44,6 +45,23 @@ class AgentProgressCallbackHandlerTest(unittest.TestCase):
             [
                 "INFO:stockagent.agents.orchestrator:agent risk_analyst 开始: 搜索近期公司风险信息",
                 "ERROR:stockagent.agents.orchestrator:agent risk_analyst 失败: 搜索近期公司风险信息",
+            ],
+        )
+
+
+class LoggingProgressReporterTest(unittest.TestCase):
+    def test_logs_agent_completion_with_elapsed_time(self) -> None:
+        reporter = LoggingProgressReporter()
+
+        with self.assertLogs("stockagent.cli", level="INFO") as logs:
+            reporter.agent_started("industry_analyst")
+            reporter.agent_finished("industry_analyst", 1.234)
+
+        self.assertEqual(
+            logs.output,
+            [
+                "INFO:stockagent.cli:启动 agent: industry_analyst",
+                "INFO:stockagent.cli:agent industry_analyst 完成（耗时 1.23 秒）",
             ],
         )
 

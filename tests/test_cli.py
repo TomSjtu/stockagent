@@ -4,7 +4,7 @@ import io
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from stockagent.cli import main, parse_args
 
@@ -60,6 +60,22 @@ class CliTest(unittest.TestCase):
             main()
 
         self.assertEqual(stdout.getvalue(), "")
+
+    def test_main_creates_and_injects_logging_progress_reporter(self) -> None:
+        progress_reporter = object()
+
+        with (
+            patch.object(sys, "argv", ["stock", "aapl"]),
+            patch(
+                "stockagent.cli.LoggingProgressReporter",
+                return_value=progress_reporter,
+            ) as reporter_type,
+            patch("stockagent.cli.run_stock_analysis") as run_analysis,
+        ):
+            main()
+
+        reporter_type.assert_called_once_with()
+        run_analysis.assert_called_once_with(ANY, progress_reporter)
 
 
 if __name__ == "__main__":

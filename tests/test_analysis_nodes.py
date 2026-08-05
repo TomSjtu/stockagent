@@ -48,6 +48,29 @@ class FakeModel:
         return self.result
 
 
+class FakeProgressReporter:
+    def __init__(self) -> None:
+        self.events: list[tuple[object, ...]] = []
+
+    def agent_started(self, agent: str) -> None:
+        self.events.append(("agent_started", agent))
+
+    def agent_finished(self, agent: str, elapsed_seconds: float) -> None:
+        self.events.append(("agent_finished", agent, elapsed_seconds))
+
+    def tool_started(self, agent: str, tool: str, args_summary: str) -> None:
+        self.events.append(("tool_started", agent, tool, args_summary))
+
+    def tool_finished(self, agent: str, tool: str) -> None:
+        self.events.append(("tool_finished", agent, tool))
+
+    def tool_failed(self, agent: str, tool: str, detail: str) -> None:
+        self.events.append(("tool_failed", agent, tool, detail))
+
+    def tokens(self, agent: str, produced: int) -> None:
+        self.events.append(("tokens", agent, produced))
+
+
 class AnalysisNodesTest(unittest.TestCase):
     def _build_nodes(
         self,
@@ -68,6 +91,7 @@ class AnalysisNodesTest(unittest.TestCase):
             "risk": FakeAgent(risk_result),
         }
         model = FakeModel(synthesize_result)
+        self.progress_reporter = FakeProgressReporter()
 
         with (
             patch(
@@ -87,7 +111,7 @@ class AnalysisNodesTest(unittest.TestCase):
                 return_value=agents["risk"],
             ),
         ):
-            nodes = build_analysis_nodes(model)
+            nodes = build_analysis_nodes(model, self.progress_reporter)
 
         return nodes, agents, model
 
@@ -224,7 +248,9 @@ class AnalysisNodesTest(unittest.TestCase):
                     "ticker": "AAPL",
                     "years": 3,
                     "industry": IndustryOutput(narrative="industry", evidence=[]),
-                    "fundamentals": FundamentalsOutput(narrative="fundamentals", concerns=[]),
+                    "fundamentals": FundamentalsOutput(
+                        narrative="fundamentals", concerns=[]
+                    ),
                 }
             )
 
@@ -366,6 +392,84 @@ class AnalysisNodesTest(unittest.TestCase):
             state["risk"],
         ]:
             self.assertIn(output.model_dump_json(indent=2), prompt)
+
+    def test_all_nodes_report_agent_lifecycle_with_elapsed_time(self) -> None:
+        nodes, _agents, _model = self._build_nodes(
+            industry_result={
+                "messages": [],
+                "structured_response": IndustryOutput(
+                    narrative="industry",
+                    evidence=[],
+                ),
+            },
+            fundamentals_result={
+                "messages": [],
+                "structured_response": FundamentalsAgentOutput(
+                    narrative="fundamentals",
+                    concerns=[],
+                ),
+            },
+            valuation_result={
+                "messages": [],
+                "structured_response": ValuationAgentOutput(
+                    narrative="valuation",
+                    market_inputs=MarketInputs(
+                        price=40.0,
+                        market_cap=200.0,
+                        currency="USD",
+                    ),
+                ),
+            },
+            risk_result={
+                "messages": [],
+                "structured_response": RiskOutput(
+                    narrative="risk",
+                    overall_rating="低",
+                    key_risks=[],
+                    evidence=[],
+                ),
+            },
+        )
+        state: dict[str, object] = {"ticker": "AAPL", "years": 3}
+
+        with (
+            patch(
+                "stockagent.agents.orchestrator.build_fundamentals_facts",
+                return_value={
+                    "annual_financials": [],
+                    "financial_filings": [],
+                },
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_valuation_facts",
+                return_value={
+                    "pe_ratio": 20.0,
+                    "pb_ratio": 4.0,
+                    "ps_ratio": 2.0,
+                },
+            ),
+        ):
+            state.update(nodes.industry(state))
+            state.update(nodes.fundamentals(state))
+            state.update(nodes.valuation(state))
+            state.update(nodes.risk(state))
+            state.update(nodes.synthesize(state))
+
+        expected_agents = [
+            "industry_analyst",
+            "fundamentals_analyst",
+            "valuation_analyst",
+            "risk_analyst",
+            "synthesize",
+        ]
+        self.assertEqual(len(self.progress_reporter.events), 10)
+        for index, agent in enumerate(expected_agents):
+            started = self.progress_reporter.events[index * 2]
+            finished = self.progress_reporter.events[index * 2 + 1]
+            self.assertEqual(started, ("agent_started", agent))
+            self.assertEqual(finished[:2], ("agent_finished", agent))
+            self.assertIsInstance(finished[2], float)
+            self.assertGreaterEqual(finished[2], 0.0)
 
 
 if __name__ == "__main__":

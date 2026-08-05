@@ -15,6 +15,7 @@ from stockagent.report.writer import ReportArtifacts
 class RunStockAnalysisTest(unittest.TestCase):
     def test_run_stock_analysis_requires_tavily_api_key(self) -> None:
         options = CLIOptions(ticker="fake", years=2)
+        progress_reporter = object()
 
         with (
             patch(
@@ -23,10 +24,11 @@ class RunStockAnalysisTest(unittest.TestCase):
             ),
             self.assertRaisesRegex(ConfigurationError, "TAVILY_API_KEY"),
         ):
-            run_stock_analysis(options)
+            run_stock_analysis(options, progress_reporter)
 
     def test_run_stock_analysis_writes_agent_delivery_artifacts(self) -> None:
         options = CLIOptions(ticker="fake", years=2)
+        progress_reporter = object()
         config = AppConfig(
             llm=LLMConfig(
                 api_key="llm-key",
@@ -57,10 +59,15 @@ class RunStockAnalysisTest(unittest.TestCase):
                 return_value=artifacts,
             ) as write_report,
         ):
-            output_artifacts = run_stock_analysis(options)
+            output_artifacts = run_stock_analysis(options, progress_reporter)
 
         set_identity.assert_called_once_with(config.edgar_identity)
-        run_agent.assert_called_once_with("fake", 2, config.llm)
+        run_agent.assert_called_once_with(
+            "fake",
+            2,
+            config.llm,
+            progress_reporter,
+        )
         write_report.assert_called_once_with(
             "fake",
             "# Agent Report\n",
@@ -72,6 +79,7 @@ class RunStockAnalysisTest(unittest.TestCase):
 
     def test_run_stock_analysis_logs_main_stages(self) -> None:
         options = CLIOptions(ticker="fake", years=2)
+        progress_reporter = object()
         config = AppConfig(
             llm=LLMConfig(
                 api_key="llm-key",
@@ -101,7 +109,7 @@ class RunStockAnalysisTest(unittest.TestCase):
             ),
             self.assertLogs("stockagent.app", level="INFO") as logs,
         ):
-            run_stock_analysis(options)
+            run_stock_analysis(options, progress_reporter)
 
         self.assertIn("INFO:stockagent.app:加载 LLM 配置完成", logs.output)
         self.assertIn("INFO:stockagent.app:启动主分析 agent", logs.output)
