@@ -529,8 +529,8 @@ class FakeAgent:
     def __init__(self, result: object) -> None:
         self.result = result
 
-    def invoke(self, _payload: object, config: object | None = None) -> object:
-        return self.result
+    def stream(self, _payload: object, *, stream_mode: object) -> object:
+        yield ("values", self.result)
 
 
 class FakeProgressReporter:

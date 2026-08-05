@@ -19,10 +19,7 @@ from stockagent.agents.facts import (
 from stockagent.agents.fundamentals_agent import build_fundamentals_agent
 from stockagent.agents.industry_agent import build_industry_agent
 from stockagent.agents.llm import build_model
-from stockagent.agents.progress import (
-    AgentProgressCallbackHandler,
-    ProgressReporter,
-)
+from stockagent.agents.progress import ProgressReporter, report_agent_update
 from stockagent.agents.risk_agent import build_risk_agent
 from stockagent.agents.state import (
     AnalysisState,
@@ -122,6 +119,7 @@ def _build_industry_node(
                     "竞争格局、市场地位和主要挑战。"
                 ),
                 output_type=IndustryOutput,
+                progress_reporter=progress_reporter,
             )
             return {"industry": output}
 
@@ -151,6 +149,7 @@ def _build_fundamentals_node(
                     "现金流、财务健康和成长性。"
                 ),
                 output_type=FundamentalsAgentOutput,
+                progress_reporter=progress_reporter,
             )
             facts = build_fundamentals_facts(state["ticker"], state["years"])
             return {
@@ -188,6 +187,7 @@ def _build_valuation_node(
                     f"基本面分析：\n{state['fundamentals'].model_dump_json(indent=2)}"
                 ),
                 output_type=ValuationAgentOutput,
+                progress_reporter=progress_reporter,
             )
             facts = build_valuation_facts(
                 state["ticker"],
@@ -232,6 +232,7 @@ def _build_risk_node(
                     f"估值分析：\n{state['valuation'].model_dump_json(indent=2)}"
                 ),
                 output_type=RiskOutput,
+                progress_reporter=progress_reporter,
             )
             return {"risk": output}
 
@@ -293,12 +294,22 @@ def _invoke_structured_agent(
     agent_name: str,
     payload: dict[str, list[dict[str, str]]],
     output_type: type[StructuredOutputT],
+    progress_reporter: ProgressReporter,
 ) -> StructuredOutputT:
-    """Invoke one agent and return its validated local output."""
-    result = agent.invoke(
+    """Stream one agent and validate its final complete state snapshot."""
+    result: object = None
+    for mode, chunk in agent.stream(
         payload,
-        config={"callbacks": [AgentProgressCallbackHandler(agent_name)]},
-    )
+        stream_mode=["updates", "values"],
+    ):
+        if mode == "updates":
+            report_agent_update(
+                chunk,
+                agent_name=agent_name,
+                progress_reporter=progress_reporter,
+            )
+        elif mode == "values":
+            result = chunk
     output = _extract_structured_response(
         result,
         agent_name=agent_name,

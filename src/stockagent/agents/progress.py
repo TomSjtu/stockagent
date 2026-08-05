@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+import json
+from collections.abc import Iterable, Mapping
 from typing import Any, Protocol
 
-from langchain_core.callbacks import BaseCallbackHandler
-
-from stockagent.observability import get_logger
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 
 class ProgressReporter(Protocol):
@@ -44,80 +43,76 @@ _STAGE_DISPLAY_NAMES = {
     ("risk_analyst", "web_search"): "搜索近期公司风险信息",
 }
 
-
-class AgentProgressCallbackHandler(BaseCallbackHandler):
-    """Log known tool stages for one agent without changing agent control flow."""
-
-    def __init__(self, agent_name: str) -> None:
-        """Create a callback that correlates tool events for the named agent."""
-        # run_id 是 LangChain 生命周期关联键，只用于将开始/结束日志配对
-        self.agent_name = agent_name
-        self._logger = get_logger("stockagent.agents.orchestrator")
-        self._tool_names_by_run_id: dict[str, str] = {}
-
-    def on_tool_start(
-        self,
-        serialized: dict[str, Any],
-        input_str: str,
-        *,
-        run_id: Any,
-        **kwargs: Any,
-    ) -> None:
-        """Log the start of a recognized tool invocation."""
-        tool_name = _tool_name(serialized)
-        stage_name = _stage_name(self.agent_name, tool_name)
-        if stage_name is None:
-            return
-
-        self._tool_names_by_run_id[str(run_id)] = tool_name
-        self._logger.info("agent %s 开始: %s", self.agent_name, stage_name)
-
-    def on_tool_end(
-        self,
-        output: Any,
-        *,
-        run_id: Any,
-        **kwargs: Any,
-    ) -> None:
-        """Log completion of a previously recognized tool invocation."""
-        tool_name = self._tool_names_by_run_id.pop(str(run_id), None)
-        if tool_name is None:
-            return
-
-        stage_name = _stage_name(self.agent_name, tool_name)
-        if stage_name is not None:
-            self._logger.info("agent %s 完成: %s", self.agent_name, stage_name)
-
-    def on_tool_error(
-        self,
-        error: BaseException,
-        *,
-        run_id: Any,
-        **kwargs: Any,
-    ) -> None:
-        """Log failure of a previously recognized tool invocation."""
-        tool_name = self._tool_names_by_run_id.pop(str(run_id), None)
-        if tool_name is None:
-            return
-
-        stage_name = _stage_name(self.agent_name, tool_name)
-        if stage_name is not None:
-            self._logger.error("agent %s 失败: %s", self.agent_name, stage_name)
+_ARGS_SUMMARY_WIDTH = 60
 
 
-def _tool_name(serialized: Mapping[str, Any]) -> str:
-    name = serialized.get("name")
-    if isinstance(name, str):
-        return name
+def report_agent_update(
+    update: object,
+    *,
+    agent_name: str,
+    progress_reporter: ProgressReporter,
+) -> None:
+    """Translate one agent update into presentation-independent progress events."""
+    for message in _messages_in(update):
+        if isinstance(message, AIMessage):
+            for tool_call in message.tool_calls:
+                tool_name = tool_call.get("name")
+                if not isinstance(tool_name, str) or not tool_name:
+                    continue
+                progress_reporter.tool_started(
+                    agent_name,
+                    _stage_name(agent_name, tool_name),
+                    _args_summary(tool_call.get("args")),
+                )
+        elif isinstance(message, ToolMessage):
+            tool_name = message.name or "unknown tool"
+            stage_name = _stage_name(agent_name, tool_name)
+            if message.status == "error":
+                progress_reporter.tool_failed(
+                    agent_name,
+                    stage_name,
+                    _message_detail(message.content),
+                )
+            else:
+                progress_reporter.tool_finished(agent_name, stage_name)
 
-    tool_id = serialized.get("id")
-    if isinstance(tool_id, list) and tool_id:
-        last_item = tool_id[-1]
-        if isinstance(last_item, str):
-            return last_item
 
-    return ""
+def _messages_in(value: object) -> Iterable[BaseMessage]:
+    if isinstance(value, BaseMessage):
+        yield value
+    elif isinstance(value, Mapping):
+        for nested in value.values():
+            yield from _messages_in(nested)
+    elif isinstance(value, (list, tuple)):
+        for nested in value:
+            yield from _messages_in(nested)
 
 
-def _stage_name(agent_name: str, tool_name: str) -> str | None:
-    return _STAGE_DISPLAY_NAMES.get((agent_name, tool_name))
+def _args_summary(args: object) -> str:
+    if args is None:
+        return ""
+    if isinstance(args, str):
+        summary = args
+    else:
+        try:
+            summary = json.dumps(
+                args,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+        except (TypeError, ValueError):
+            summary = str(args)
+    if len(summary) <= _ARGS_SUMMARY_WIDTH:
+        return summary
+    return f"{summary[: _ARGS_SUMMARY_WIDTH - 1]}…"
+
+
+def _message_detail(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    return json.dumps(content, ensure_ascii=False, default=str)
+
+
+def _stage_name(agent_name: str, tool_name: str) -> str:
+    return _STAGE_DISPLAY_NAMES.get((agent_name, tool_name), tool_name)

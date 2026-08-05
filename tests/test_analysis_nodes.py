@@ -4,7 +4,7 @@ import unittest
 from typing import cast
 from unittest.mock import patch
 
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage
 
 from stockagent.agents.errors import AgentOutputError
 from stockagent.agents.orchestrator import build_analysis_nodes
@@ -22,15 +22,25 @@ from stockagent.report.composer import AnnualFinancialSnapshot
 
 
 class FakeAgent:
-    def __init__(self, result: object) -> None:
+    def __init__(
+        self,
+        result: object,
+        updates: list[object] | None = None,
+        values: list[object] | None = None,
+    ) -> None:
         self.result = result
+        self.updates = updates or []
+        self.values = values
         self.payload: object | None = None
-        self.config: object | None = None
+        self.stream_mode: object | None = None
 
-    def invoke(self, payload: object, config: object | None = None) -> object:
+    def stream(self, payload: object, *, stream_mode: object) -> object:
         self.payload = payload
-        self.config = config
-        return self.result
+        self.stream_mode = stream_mode
+        for update in self.updates:
+            yield ("updates", update)
+        for value in self.values or [self.result]:
+            yield ("values", value)
 
 
 class FakeModel:
@@ -138,13 +148,124 @@ class AnalysisNodesTest(unittest.TestCase):
                 ]
             },
         )
-        self.assertIsInstance(agents["industry"].config, dict)
-        callbacks = agents["industry"].config["callbacks"]
-        self.assertEqual(len(callbacks), 1)
-        self.assertEqual(callbacks[0].agent_name, "industry_analyst")
+        self.assertEqual(
+            agents["industry"].stream_mode,
+            ["updates", "values"],
+        )
+
+    def test_agent_stream_reports_tool_events_with_args_and_name_fallback(
+        self,
+    ) -> None:
+        output = IndustryOutput(narrative="Industry", evidence=[])
+        query = "AAPL " + "very long market search query " * 4
+        nodes, agents, _model = self._build_nodes(
+            industry_result={"messages": [], "structured_response": output},
+            fundamentals_result={},
+            valuation_result={},
+            risk_result={},
+        )
+        agents["industry"].updates = [
+            {
+                "any_model_node": {
+                    "messages": [
+                        AIMessage(
+                            content="",
+                            tool_calls=[
+                                {
+                                    "name": "web_search",
+                                    "args": {"query": query},
+                                    "id": "tool-1",
+                                    "type": "tool_call",
+                                },
+                                {
+                                    "name": "custom_lookup",
+                                    "args": {"ticker": "AAPL"},
+                                    "id": "tool-2",
+                                    "type": "tool_call",
+                                },
+                            ],
+                        )
+                    ]
+                }
+            },
+            {
+                "renamed_tool_node": {
+                    "messages": [
+                        ToolMessage(
+                            content="ok",
+                            name="web_search",
+                            status="success",
+                            tool_call_id="tool-1",
+                        ),
+                        ToolMessage(
+                            content="lookup failed",
+                            name="custom_lookup",
+                            status="error",
+                            tool_call_id="tool-2",
+                        ),
+                    ]
+                }
+            },
+        ]
+
+        result = nodes.industry({"ticker": "aapl", "years": 3})
+
+        self.assertEqual(result, {"industry": output})
+        tool_events = self.progress_reporter.events[1:-1]
+        self.assertEqual(tool_events[0][:3], (
+            "tool_started",
+            "industry_analyst",
+            "搜索市场与行业信息",
+        ))
+        self.assertLessEqual(len(tool_events[0][3]), 60)
+        self.assertIn("AAPL", tool_events[0][3])
+        self.assertEqual(
+            tool_events[1],
+            (
+                "tool_started",
+                "industry_analyst",
+                "custom_lookup",
+                '{"ticker":"AAPL"}',
+            ),
+        )
+        self.assertEqual(
+            tool_events[2],
+            (
+                "tool_finished",
+                "industry_analyst",
+                "搜索市场与行业信息",
+            ),
+        )
+        self.assertEqual(
+            tool_events[3],
+            (
+                "tool_failed",
+                "industry_analyst",
+                "custom_lookup",
+                "lookup failed",
+            ),
+        )
+
+    def test_agent_uses_last_complete_state_snapshot(self) -> None:
+        stale = IndustryOutput(narrative="stale", evidence=[])
+        final = IndustryOutput(narrative="final", evidence=[])
+        nodes, agents, _model = self._build_nodes(
+            industry_result={},
+            fundamentals_result={},
+            valuation_result={},
+            risk_result={},
+        )
+        agents["industry"].values = [
+            {"messages": [], "structured_response": stale},
+            {"messages": [], "structured_response": final},
+        ]
+
+        result = nodes.industry({"ticker": "aapl", "years": 3})
+
+        self.assertEqual(result, {"industry": final})
 
     def test_agent_tool_error_stops_node_before_structured_output(self) -> None:
-        nodes, _agents, _model = self._build_nodes(
+        nodes, agents, _model = self._build_nodes(
             industry_result={
                 "messages": [
                     ToolMessage(
@@ -159,9 +280,33 @@ class AnalysisNodesTest(unittest.TestCase):
             valuation_result={},
             risk_result={},
         )
+        agents["industry"].updates = [
+            {
+                "tool_executor": {
+                    "messages": [
+                        ToolMessage(
+                            content="search failed",
+                            name="web_search",
+                            status="error",
+                            tool_call_id="tool-1",
+                        )
+                    ]
+                }
+            }
+        ]
 
         with self.assertRaisesRegex(AgentOutputError, "industry_analyst.*web_search"):
             nodes.industry({"ticker": "AAPL", "years": 3})
+
+        self.assertEqual(
+            self.progress_reporter.events[1],
+            (
+                "tool_failed",
+                "industry_analyst",
+                "搜索市场与行业信息",
+                "search failed",
+            ),
+        )
 
     def test_agent_requires_a_valid_structured_response(self) -> None:
         nodes, _agents, _model = self._build_nodes(
