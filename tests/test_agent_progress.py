@@ -21,6 +21,24 @@ class LoggingProgressReporterTest(unittest.TestCase):
             ],
         )
 
+    def test_logs_tool_failure_at_error_level_with_detail(self) -> None:
+        reporter = LoggingProgressReporter()
+
+        with self.assertLogs("stockagent.cli", level="ERROR") as logs:
+            reporter.tool_failed(
+                "industry_analyst",
+                "搜索市场与行业信息",
+                "search failed",
+            )
+
+        self.assertEqual(
+            logs.output,
+            [
+                "ERROR:stockagent.cli:agent industry_analyst 失败: "
+                "搜索市场与行业信息（search failed）"
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

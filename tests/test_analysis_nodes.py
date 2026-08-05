@@ -33,6 +33,7 @@ class FakeAgent:
         self.values = values
         self.payload: object | None = None
         self.stream_mode: object | None = None
+        self.stream_completed = False
 
     def stream(self, payload: object, *, stream_mode: object) -> object:
         self.payload = payload
@@ -41,6 +42,7 @@ class FakeAgent:
             yield ("updates", update)
         for value in self.values or [self.result]:
             yield ("values", value)
+        self.stream_completed = True
 
 
 class FakeModel:
@@ -264,7 +266,7 @@ class AnalysisNodesTest(unittest.TestCase):
 
         self.assertEqual(result, {"industry": final})
 
-    def test_agent_tool_error_stops_node_before_structured_output(self) -> None:
+    def test_agent_tool_failure_is_reported_without_interrupting_stream(self) -> None:
         nodes, agents, _model = self._build_nodes(
             industry_result={
                 "messages": [
@@ -292,12 +294,28 @@ class AnalysisNodesTest(unittest.TestCase):
                         )
                     ]
                 }
-            }
+            },
+            {
+                "tool_executor": {
+                    "messages": [
+                        ToolMessage(
+                            content="later tool completed",
+                            name="custom_lookup",
+                            status="success",
+                            tool_call_id="tool-2",
+                        )
+                    ]
+                }
+            },
         ]
 
-        with self.assertRaisesRegex(AgentOutputError, "industry_analyst.*web_search"):
+        with self.assertRaises(AgentOutputError) as raised:
             nodes.industry({"ticker": "AAPL", "years": 3})
 
+        self.assertEqual(
+            str(raised.exception),
+            "industry_analyst tool web_search failed: search failed",
+        )
         self.assertEqual(
             self.progress_reporter.events[1],
             (
@@ -307,6 +325,15 @@ class AnalysisNodesTest(unittest.TestCase):
                 "search failed",
             ),
         )
+        self.assertEqual(
+            self.progress_reporter.events[2],
+            (
+                "tool_finished",
+                "industry_analyst",
+                "custom_lookup",
+            ),
+        )
+        self.assertTrue(agents["industry"].stream_completed)
 
     def test_agent_requires_a_valid_structured_response(self) -> None:
         nodes, _agents, _model = self._build_nodes(
