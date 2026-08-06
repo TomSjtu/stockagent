@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, TypedDict, TypeVar
+from warnings import catch_warnings, filterwarnings
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import ToolMessage
@@ -305,7 +306,21 @@ def _build_structured_model_stream(structured_model: Any) -> Any:
     """Wrap one structured model call so LangGraph exposes raw message deltas."""
 
     def generate(state: _StructuredModelState) -> dict[str, object]:
-        return {"response": structured_model.invoke(state["payload"])}
+        # Temporary compatibility workaround for OpenAI SDK structured streaming:
+        # langchain-openai serializes the final parsed event through Pydantic, whose
+        # generated generic field still expects None even though parsing succeeded.
+        with catch_warnings():
+            filterwarnings(
+                "ignore",
+                message=(
+                    r"(?s)^Pydantic serializer warnings:"
+                    r".*field_name='parsed'"
+                    r".*input_type=SynthesisOutput"
+                ),
+                category=UserWarning,
+            )
+            response = structured_model.invoke(state["payload"])
+        return {"response": response}
 
     graph = StateGraph(_StructuredModelState)
     graph.add_node("generate", generate)

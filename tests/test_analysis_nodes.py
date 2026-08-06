@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import warnings
 from collections.abc import Iterator
 from time import sleep
 from typing import Any, cast
@@ -77,6 +78,20 @@ class FakeModel:
     def invoke(self, payload: object) -> object:
         self.payload = payload
         return self.result
+
+
+class WarningSynthesisModel(FakeModel):
+    def invoke(self, payload: object) -> object:
+        warnings.warn(
+            "Pydantic serializer warnings:\n"
+            "  PydanticSerializationUnexpectedValue("
+            "Expected `none` - serialized value may not be as expected "
+            "[field_name='parsed', input_value=SynthesisOutput(...), "
+            "input_type=SynthesisOutput])",
+            UserWarning,
+        )
+        warnings.warn("unrelated warning", UserWarning)
+        return super().invoke(payload)
 
 
 class FakeStreamingSynthesisModel(BaseChatModel):
@@ -742,6 +757,61 @@ class AnalysisNodesTest(unittest.TestCase):
             },
         )
         self.assertIsNotNone(model.output_type)
+
+    def test_synthesize_node_only_suppresses_known_pydantic_serializer_warning(
+        self,
+    ) -> None:
+        model = WarningSynthesisModel(
+            {
+                "summary": "摘要正文",
+                "investment_recommendation": "投资建议正文",
+            }
+        )
+        progress_reporter = FakeProgressReporter()
+        fake_agent = FakeAgent({})
+
+        with (
+            patch(
+                "stockagent.agents.orchestrator.build_industry_agent",
+                return_value=fake_agent,
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_fundamentals_agent",
+                return_value=fake_agent,
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_valuation_agent",
+                return_value=fake_agent,
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_risk_agent",
+                return_value=fake_agent,
+            ),
+        ):
+            nodes = build_analysis_nodes(model, progress_reporter)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            nodes.synthesize(
+                {
+                    "ticker": "AAPL",
+                    "years": 3,
+                    "industry": IndustryOutput(narrative="industry", evidence=[]),
+                    "fundamentals": FundamentalsOutput(
+                        narrative="fundamentals",
+                        concerns=[],
+                    ),
+                    "valuation": ValuationOutput(narrative="valuation"),
+                    "risk": RiskOutput(
+                        narrative="risk",
+                        overall_rating="低",
+                        key_risks=[],
+                        evidence=[],
+                    ),
+                }
+            )
+
+        self.assertEqual([str(item.message) for item in caught], ["unrelated warning"])
 
     def test_synthesize_node_reports_model_output_amount_without_content(
         self,
