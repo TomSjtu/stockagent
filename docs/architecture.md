@@ -14,16 +14,17 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 6. 生成带网页与年度 SEC 10-K 引用的中文 Markdown；
 7. 写入 Markdown 与同名 `sources.json` 审计附属文件。
 
-系统只支持 `openai:<model>` 格式的 LLM 配置。它不提供 Web 服务、数据库、长期记忆、checkpoint、异步/流式响应、质量重试或部分成功报告。
+系统只支持 `openai:<model>` 格式的 LLM 配置。它不提供 Web 服务、数据库、长期记忆、checkpoint、异步执行、质量重试或部分成功报告。流式进度输出是 CLI 的一部分：节点同步消费 Agent 的增量事件用于观测，但不会流式输出报告正文，也不会改变父图的同步控制流。
 
 ## 2. 总体架构
 
 ```text
 命令行与应用层
   stock CLI
-    -> cli.py -> app.py
-       -> load_app_config() + edgar.set_identity()
-       -> agents.run_stock_analysis_agent()
+    -> cli.py：Rich 日志 + 共享实时进度区域
+       -> app.py（显式传递 ProgressReporter）
+          -> load_app_config() + edgar.set_identity()
+          -> agents.run_stock_analysis_agent()
 
 编排层（agents）
   LangGraph StateGraph
@@ -35,6 +36,9 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
                          +-> EDGAR + 确定性基本面工具（供叙事使用）
 
   orchestrator.py
+    Agent.stream(updates, values, messages)
+      -> progress.py：事件契约、流式增量解析与模型生成心跳
+      -> 最后一份 values 完整状态快照中的 LLM typed output
     LLM typed output + facts.build_*_facts(ticker, years, market inputs)
       -> 完整的 State output
 
@@ -60,8 +64,8 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 
 | 层 | 目录/模块 | 职责 | 不负责的事情 |
 | --- | --- | --- | --- |
-| 入口与应用 | `cli.py`、`app.py` | 参数解析、配置加载、生命周期日志、调用报告工作流并持久化交付产物 | 财务计算、Agent 调度细节、报告构造 |
-| 编排 | `agents/orchestrator.py`、各 Agent builder | Graph 拓扑、Agent 调用、工具错误扫描、facts interface 调用、LLM output 与确定性字段合并、汇总节点的叙事生成 | 解析工具 JSON、重复校验取数层不变量、直接解析 EDGAR 表格、构造或持久化报告 |
+| 入口与应用 | `cli.py`、`app.py` | 参数解析、配置加载、Rich 日志与共享实时进度区域、进度上报器的显式注入、调用报告工作流并持久化交付产物 | 财务计算、Agent 调度细节、流式增量解析、报告构造 |
+| 编排 | `agents/orchestrator.py`、`agents/progress.py`、各 Agent builder | Graph 拓扑、节点内流式 Agent 调用、进度事件契约与增量解析、工具错误扫描、facts interface 调用、LLM output 与确定性字段合并、汇总节点的叙事生成 | 终端渲染、解析工具 JSON、重复校验取数层不变量、直接解析 EDGAR 表格、构造或持久化报告 |
 | 报告交付 | `report/` | 在 Graph 返回后编排完整报告、单次聚合网页与 filing 证据、渲染引用、构造匹配的 Markdown 与 `EvidenceBundle`，并写入双文件产物 | Agent 调度、Graph State 写入、财务计算 |
 | 确定性事实处理 | `agents/facts.py` | 用股票代码与财年数直接调用确定性财务分析并投影 State 所需字段；估值另接收 LLM 声明的价格与市值 | 工具 JSON、LangChain 消息、LLM 调用、Graph State 写入、叙事语义和报告渲染 |
 | 工具适配 | `tools/` | 将搜索和确定性计算暴露给 Agent，统一为 JSON 文本工具结果 | 业务决策和跨节点状态 |
@@ -73,18 +77,20 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 
 ### 2.2 运行时主流程
 
-1. `stockagent.cli:main()` 解析参数，设置日志，并将预期异常转换为命令行错误。
-2. `app.run_stock_analysis()` 调用 `load_app_config()`；配置层读取 `.env`，统一加载 LLM、Tavily 和可覆盖的 EDGAR identity，并要求 LLM/Tavily 凭据。
+1. `stockagent.cli:main()` 解析参数，创建共用的 Rich `Console` 与 `RichProgressReporter`，再用同一个 Console 配置日志；实时区域的上下文覆盖整个应用工作流（包括报告写入），预期异常仍转换为命令行错误。
+2. `app.run_stock_analysis()` 调用 `load_app_config()`；配置层读取 `.env`，统一加载 LLM、Tavily 和可覆盖的 EDGAR identity，并要求 LLM/Tavily 凭据。CLI 创建的进度上报器经应用层显式传入编排层。
 3. 应用层调用 `edgar.set_identity(config.edgar_identity)`，再进入 Agent 报告工作流。
 4. `agents.run_stock_analysis_agent()` 通过包级延迟导入边界调用真正的 orchestrator，避免普通模块导入时初始化重型依赖。
-5. `orchestrator` 通过 `LLMConfig` 显式参数创建 `ChatOpenAI`，将四个 Agent builder 和汇总节点组装为 `AnalysisNodes`。
-6. `StateGraph` 以只有 `ticker`、`years` 的初始 State 启动。行业与基本面节点是两个起始分支；估值节点通过联合入边等待它们都返回。
-7. 行业、估值和风险 Agent 通过 `web_search()` 调用 Tavily；其 typed output 只保留实际采用的 `Evidence`，不会保存全部搜索结果。
-8. 基本面和估值 Agent 保留财务工具供各自叙事使用；工具通过 `fundamentals/analysis.py` 读取 EDGAR 数据。该分析服务负责记录取数、LRU 缓存、连续财年窗口校验、指标编排和 trailing 估值；EDGAR Provider 为匹配的年度记录附加可空 `SecFilingReference`，缺失 filing 元数据只记录 warning，不阻断财务记录。
-9. 每个分析节点先校验 LLM 侧的局部 typed output，再由编排层用 State 中的 `ticker`、`years` 直接调用 `build_fundamentals_facts()` 或 `build_valuation_facts()`；估值调用还传入 LLM 在 `market_inputs` 中声明的 `price` 与 `market_cap`。编排层把两部分构造成完整 State 模型。LangChain messages 只用于扫描明确的工具错误，工具返回文本和原始 JSON 均不进入 `AnalysisState`。
-10. 风险节点消费前三项 typed output；汇总节点消费四项 output，只调用一次模型生成 `SynthesisOutput` 中的摘要与投资建议两个叙事片段，并保留可复用的内部证据标记。完整报告排版、证据聚合和引用渲染都不在该节点内发生。
-11. Graph 返回最终 `AnalysisState` 后，`run_stock_analysis_agent()` 在图外调用一次 `report.delivery.deliver_report()`。交付 module 解包四个分析 output 与 `SynthesisOutput`，以 `ReportComposer` 编排完整 Markdown，只聚合一次网页 Evidence 与年度 filing Evidence，再用同一清单渲染引用并构造唯一的 `EvidenceBundle`。引用 ID 直接来自这次渲染，因此“正文脚注 ⊆ 审计证据”由单次构造保证，不依赖两处代码重复算出相同结果。
-12. `run_stock_analysis_agent()` 返回匹配的 Markdown 与 `EvidenceBundle`。应用层调用 `write_report_artifacts()`，写入 `TICKER-YYYY-MM-DD.md` 和 `TICKER-YYYY-MM-DD.sources.json`。
+5. `orchestrator` 通过 `LLMConfig` 显式参数创建 `ChatOpenAI`，将四个 Agent builder 和汇总节点组装为 `AnalysisNodes`；同一个 `ProgressReporter` 由各节点闭包捕获。
+6. `StateGraph` 以只有 `ticker`、`years` 的初始 State 同步启动。行业与基本面节点是两个起始分支；估值节点通过联合入边等待它们都返回。父图仍以一次性 `graph.invoke()` 调用，不消费图级流。
+7. 四个分析节点在内部调用 `agent.stream(..., stream_mode=["updates", "values", "messages"])`：`updates` 被翻译为工具进度事件，`messages` 只提供模型生成量；拿不到消息增量时，后台守护线程以耗时心跳维持活体反馈。最后一份 `values` 完整状态快照是 `structured_response` 的来源，增量内容本身不写入日志，也不用于重建业务状态。
+8. 行业、估值和风险 Agent 通过 `web_search()` 调用 Tavily；其 typed output 只保留实际采用的 `Evidence`，不会保存全部搜索结果。
+9. 基本面和估值 Agent 保留财务工具供各自叙事使用；工具通过 `fundamentals/analysis.py` 读取 EDGAR 数据。该分析服务负责记录取数、LRU 缓存、连续财年窗口校验、指标编排和 trailing 估值；EDGAR Provider 为匹配的年度记录附加可空 `SecFilingReference`，缺失 filing 元数据只记录 warning，不阻断财务记录。
+10. 每个分析节点从最后一份完整状态快照校验 LLM 侧的局部 typed output，再由编排层用 State 中的 `ticker`、`years` 直接调用 `build_fundamentals_facts()` 或 `build_valuation_facts()`；估值调用还传入 LLM 在 `market_inputs` 中声明的 `price` 与 `market_cap`。编排层把两部分构造成完整 State 模型。工具返回文本和原始 JSON 均不进入 `AnalysisState`。
+11. 工具失败的 `updates` 会立即产生可见的失败事件，但不会中断流；流结束后，编排层仍按原有语义扫描完整状态快照中的 LangChain messages，并以同一错误类型阻止无效输出进入下游。
+12. 风险节点消费前三项 typed output；汇总节点消费四项 output，只调用一次结构化模型生成 `SynthesisOutput` 中的摘要与投资建议两个叙事片段，并以同样的消息增量机制上报生成进度。完整报告排版、证据聚合和引用渲染都不在该节点内发生。
+13. Graph 返回最终 `AnalysisState` 后，`run_stock_analysis_agent()` 在图外调用一次 `report.delivery.deliver_report()`。交付 module 解包四个分析 output 与 `SynthesisOutput`，以 `ReportComposer` 编排完整 Markdown，只聚合一次网页 Evidence 与年度 filing Evidence，再用同一清单渲染引用并构造唯一的 `EvidenceBundle`。引用 ID 直接来自这次渲染，因此“正文脚注 ⊆ 审计证据”由单次构造保证，不依赖两处代码重复算出相同结果。
+14. `run_stock_analysis_agent()` 返回匹配的 Markdown 与 `EvidenceBundle`。应用层调用 `write_report_artifacts()`，写入 `TICKER-YYYY-MM-DD.md` 和 `TICKER-YYYY-MM-DD.sources.json`。
 
 ## 3. 关键设计与契约
 
@@ -95,6 +101,7 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 - 基本面与估值都将 LLM schema 和 State 模型分开：`FundamentalsAgentOutput` 只含 `narrative`、`concerns`，`ValuationAgentOutput` 只含估值叙事、所选 evidence 与完整 `market_inputs`；对应的 State 模型再增加确定性字段。
 - `FundamentalsOutput.annual_financials` 和 `financial_filings` 的最终权威来源是编排层按本次 `ticker`、`years` 直接调用的确定性财务分析 module；基本面工具结果只服务于 Agent 叙事，不回流 State。
 - `ValuationOutput` 的 PE/PB/PS 由确定性财务分析 module 使用 `ValuationAgentOutput.market_inputs` 中声明的 `price`、`market_cap` 计算。价格、市值、币种、时点和证据 ID 均以 LLM 的结构化声明为准；估值工具结果不再是报告状态的权威来源。
+- 进度事件是纯观测数据：它们不写入 `AnalysisState`，不参与 facts interface 的输入或输出，也不进入任何确定性事实取值路径。因此 [ADR 0001](adr/0001-deterministic-facts-at-source.md) 的边界保持不变，无需新增 ADR。
 - 引用渲染是确定性的：有效内部标记按首次出现顺序成为全局脚注；未知标记记录 warning 后移除；未引用 evidence 只保留在 `sources.json`。
 - 报告交付也是确定性的：`deliver_report()` 从最终 State 一次构造 Markdown 与 `EvidenceBundle`，证据聚合和年度 filing 投影只有这一条路径。
 
@@ -135,7 +142,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | `risk` | 风险节点 | 汇总、报告交付层 | `RiskOutput`，含已选网页 `evidence` |
 | `synthesis` | 汇总节点 | 图外的报告交付层 | `SynthesisOutput`，只含 `summary` 与 `investment_recommendation` 两个 Markdown 叙事片段 |
 
-所有结构化 Agent 都配置 `ToolStrategy(OutputType, handle_errors=False)`。orchestrator 在接受 output 前检查局部 `ToolMessage`：任何 `status == "error"`、缺失 `structured_response` 或 LLM 侧 Pydantic 校验失败都会抛出 `AgentOutputError`。随后，基本面和估值节点调用 facts interface，并由完整 State 模型的构造执行最终字段校验；取数层或估值计算失败同样会在无效数据进入 State 前终止 Graph。未知基础设施异常则分类为 `LLMTimeoutError` 或 `LLMResponseError`。
+所有结构化 Agent 都配置 `ToolStrategy(OutputType, handle_errors=False)`。流式解析器发现失败状态的 `ToolMessage` 时会立即上报失败事件，但不会提前中断 Agent；流结束后，orchestrator 在接受 output 前检查最后一份完整状态快照中的局部 messages。任何工具错误、缺失 `structured_response` 或 LLM 侧 Pydantic 校验失败都会抛出 `AgentOutputError`。随后，基本面和估值节点调用 facts interface，并由完整 State 模型的构造执行最终字段校验；取数层或估值计算失败同样会在无效数据进入 State 前终止 Graph。未知基础设施异常则分类为 `LLMTimeoutError` 或 `LLMResponseError`。
 
 ### 3.5 外部边界与缓存
 
@@ -159,7 +166,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | `.env.example` | 提供必需的 LLM 与 Tavily 环境变量模板，不含真实凭据。 | 用户复制为未跟踪的 `.env`；`config.py` 用 `python-dotenv` 加载。可选的 `EDGAR_IDENTITY` 未列入模板，缺省时使用内置 identity。 |
 | `.gitignore` | 忽略 `.env`、虚拟环境、构建产物、缓存字节码和 `output/`。 | 保证密钥与生成报告不进入版本控制。 |
 | `README.md` | 面向使用者的简介、安装、配置、命令示例和简化架构图。 | 与本文互补；本文提供维护级细节。 |
-| `pyproject.toml` | Python 版本、运行依赖、`stock` 命令入口、Hatch 构建和 Ruff import 排序配置。 | `stock` 映射到 `stockagent.cli:main`；`uv.lock` 锁定其解析结果。 |
+| `pyproject.toml` | Python 版本、运行依赖（包括用于终端日志与共享实时进度区域的 `rich`）、`stock` 命令入口、Hatch 构建和 Ruff import 排序配置。 | `stock` 映射到 `stockagent.cli:main`；`uv.lock` 锁定其解析结果。 |
 | `uv.lock` | `uv` 生成的精确依赖锁文件。 | 应与 `pyproject.toml` 同步更新；不承载业务逻辑。 |
 
 ### 4.2 `docs/`
@@ -169,17 +176,18 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | `docs/architecture.md` | 本文：模块边界、执行流、契约、目录和测试索引。 |
 | `docs/adr/0001-deterministic-facts-at-source.md` | 记录确定性事实由编排层直接取得、不经 LLM 工具边界回流的决策与理由。 |
 | `docs/fundamentals.md` | 解释利润表、现金流量表、资产负债表和基本面分析概念，属于领域知识说明而非运行时模块。 |
+| `docs/specs/0001-streaming-cli-progress.md` | 记录 Agent 内部流式进度、终端呈现、控制流约束与测试决策。 |
 
 ### 4.3 `src/stockagent/`：顶层应用模块
 
 | 路径 | 作用 | 直接协作对象 |
 | --- | --- | --- |
 | `src/stockagent/__init__.py` | 顶层包标记；当前没有公开业务 API。 | 使 `stockagent` 可作为包导入。 |
-| `src/stockagent/cli.py` | 定义 argparse 参数、正整数校验、日志初始化和进程级错误处理。 | 调用 `app.run_stock_analysis()`；使用 `CLIOptions` 和 `StockAgentError`。 |
-| `src/stockagent/app.py` | 应用服务入口，连接配置、Agent 报告生成和双文件报告交付。 | 延迟导入 `agents` 与 `report.writer`，以同一报告日期写入 Markdown 和 JSON。 |
+| `src/stockagent/cli.py` | 定义 argparse 参数、正整数校验、Rich 共享实时进度区域和进程级错误处理。 | 创建 `RichProgressReporter` 并传给 `app.run_stock_analysis()`；与日志共用一个 Rich Console。 |
+| `src/stockagent/app.py` | 应用服务入口，连接配置、进度上报器、Agent 报告生成和双文件报告交付。 | 将 CLI 注入的 `ProgressReporter` 传给 `agents`，并以同一报告日期写入 Markdown 和 JSON。 |
 | `src/stockagent/config.py` | 定义 `LLMConfig`、`AppConfig`、`CLIOptions`、默认模型/EDGAR identity 和 `.env` 加载。 | 被 CLI、应用层、`agents/llm.py` 和 orchestrator 使用。 |
 | `src/stockagent/errors.py` | 定义所有预期运行时错误的根类 `StockAgentError` 及 `ConfigurationError`。 | CLI 统一捕获；数据和 Agent 错误继承该根类。 |
-| `src/stockagent/observability.py` | 配置 stderr 日志格式与第三方 logger 等级，提供 logger 和阶段日志辅助函数。 | CLI、应用层、Agent 回调和报告写入器使用。 |
+| `src/stockagent/observability.py` | 以 Rich handler 配置 stderr 日志格式与第三方 logger 等级，并提供 logger 和阶段日志辅助函数。 | 与 CLI 实时区域共用 Rich Console；应用层和报告写入器使用。 |
 
 ### 4.4 `src/stockagent/agents/`：LangGraph 编排层
 
@@ -194,8 +202,8 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | `src/stockagent/agents/fundamentals_agent.py` | 定义基本面 prompt，构建仅含聚合财务工具的 structured Agent。 | 调用 `get_fundamentals_analysis` 辅助叙事，返回只含叙事与关注点的 `FundamentalsAgentOutput`。 |
 | `src/stockagent/agents/valuation_agent.py` | 定义估值 prompt，构建搜索与估值计算工具 Agent。 | 返回含叙事、证据与声明市场输入的 `ValuationAgentOutput`；报告比率由编排层另行计算。 |
 | `src/stockagent/agents/risk_agent.py` | 定义风险 prompt，构建仅含搜索工具的 structured Agent。 | 消费上游 State 后返回 `RiskOutput`。 |
-| `src/stockagent/agents/subagent_progress.py` | `AgentProgressCallbackHandler` 将固定 Agent 的工具开始、完成和失败事件映射为中文日志。 | 每次 Agent invoke 由 orchestrator 注入 callback。 |
-| `src/stockagent/agents/orchestrator.py` | 核心编排：定义 `AnalysisNodes`、Graph 拓扑和五个节点，调用 Agent、扫描工具错误、以 State 参数调用 facts interface，并在 Graph 返回后调用报告交付 interface。 | 连接 Agent builder、facts、State、模型、交付 module、日志和错误模块；不消费工具返回文本，也不自行构造交付产物。 |
+| `src/stockagent/agents/progress.py` | 定义与呈现无关的 `ProgressReporter` 事件契约，解析 Agent 的工具与模型消息增量，并在拿不到模型增量时驱动耗时心跳。 | 由 orchestrator 消费流时调用；不导入 Rich 或其他终端库，中文阶段名未命中时回退到工具原名。 |
+| `src/stockagent/agents/orchestrator.py` | 核心编排：定义 `AnalysisNodes`、Graph 拓扑和五个节点，在节点内流式调用 Agent、从最后一份完整状态快照校验 output、以 State 参数调用 facts interface，并在 Graph 返回后调用报告交付 interface。 | 连接 Agent builder、progress、facts、State、模型、交付和错误模块；父图保持一次性调用，不消费工具返回文本，也不自行构造交付产物。 |
 
 ### 4.5 `src/stockagent/tools/`：给 LLM 的能力适配器
 
@@ -254,10 +262,10 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 
 | 路径 | 覆盖职责 |
 | --- | --- |
-| `tests/test_cli.py` | 参数默认值、输出目录/日志级别、非法年份、入口错误处理和 stdout 行为。 |
-| `tests/test_app.py` | 应用层连接 Agent、报告写入器和主阶段日志。 |
+| `tests/test_cli.py` | 参数默认值、输出目录/日志级别、非法年份、入口错误处理、stdout 行为和覆盖完整工作流的单一实时上报器。 |
+| `tests/test_app.py` | 应用层连接配置、进度上报器、Agent 和报告写入器。 |
 | `tests/test_config.py` | 必需环境变量、默认模型与 OpenAI 环境变量映射。 |
-| `tests/test_observability.py` | 日志格式、时间精度及第三方日志等级。 |
+| `tests/test_observability.py` | Rich 日志处理器、时间精度、第三方日志等级及非终端输出无控制字符。 |
 | `tests/fundamentals/test_analysis.py` | ticker/年份校验、连续财年窗口、缓存、无数据错误和最新财年估值选择。 |
 | `tests/test_financial_models.py` | 财务记录、filing 引用和指标 dataclass 的字段与默认值契约。 |
 | `tests/test_financial_tools.py` | 财务工具 JSON 序列化、估值市场输入与缺失原因。 |
@@ -266,8 +274,8 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | `tests/test_agent_state.py` | LLM schema 与 State 模型拆分、确定性字段默认值、证据 ID 唯一性、市场输入证据关联、年度 filing、风险评级和 State 必填/可选字段。 |
 | `tests/test_deterministic_facts.py` | 两个公开 facts interface 的类型化投影：年度快照字段来源、缺失值、排序、filing 缺失，以及声明市场输入驱动的估值比率。 |
 | `tests/test_analysis_graph.py` | 真实 Graph builder 的完整数据流、联合 fan-in，以及从取数层到最终 Markdown 财务表和 SEC 脚注的穿透行为。 |
-| `tests/test_analysis_nodes.py` | LangChain 工具错误 seam、State 参数到 facts interface 的连接、声明市场输入驱动估值、节点局部 State 更新，以及汇总节点的叙事输出与上游提示词。 |
-| `tests/test_agent_progress.py` | 固定 Agent 的工具开始、完成、失败日志。 |
+| `tests/test_analysis_nodes.py` | 真实形状流事件到进度上报的转换、最后一份状态快照取值、工具失败语义、模型增量与心跳，以及 facts interface、节点 State 更新和汇总提示词。 |
+| `tests/test_agent_progress.py` | Rich 实时区域的完成/失败日志、异常清理、并发刷新锁和非终端降级。 |
 | `tests/test_agent_errors.py` | Agent 错误类型、模型 provider 校验、Graph 异常分类和 OpenAI client 配置。 |
 | `tests/test_orchestrator_logging.py` | 公开 Agent runner 的 Graph 构建、初始 State、最终报告和 SEC evidence bundle 校验。 |
 | `tests/data/__init__.py` | `tests.data` 测试包标记。 |
@@ -297,9 +305,11 @@ uv run pytest -q
 ## 5. 目录间依赖关系
 
 ```text
-cli -> app -> config
+cli -> Rich Live + observability -> RichHandler
+  \-> app -> config
        |   +-> edgar.set_identity()
        +-> agents -> orchestrator
+                    |-> agents/progress（事件解析与心跳）
                     |-> agents/llm
                     |-> Agent builders -> tools/search -> Tavily
                     |                  +-> tools/financials
@@ -313,12 +323,15 @@ cli -> app -> config
 
 app -> report/writer -> Markdown + sources.json
 
+cli 创建的 ProgressReporter 实现经 app 注入 orchestrator；
+agents/progress 只调用协议，不依赖 CLI 或 Rich。
+
 data/providers -> financials
 公式模块：fundamentals/inputs + profitability/cash_flow/financial_health/growth/valuation
 tests -> every production layer, but production code never imports tests
 ```
 
-依赖方向的核心规则是：无 I/O 的公式模块不能依赖 Agent、工具、配置、网络或文件系统；`fundamentals/analysis.py` 是允许访问 provider 的确定性服务边界。工具不能直接理解 Graph State；facts module 可以调用该分析服务，但不能依赖 LangChain、LLM 或完整 Graph State；报告写入器只接受已渲染 Markdown 与证据包。只有 orchestrator 知道 Graph 拓扑和 Agent 调用顺序；只有报告交付 module 知道如何从跨 Agent 输出编排完整报告、聚合证据、渲染引用并构造审计证据包；只有 facts module 理解强类型财务分析结果到 State 确定性字段的投影。
+依赖方向的核心规则是：无 I/O 的公式模块不能依赖 Agent、工具、配置、网络或文件系统；`fundamentals/analysis.py` 是允许访问 provider 的确定性服务边界。工具不能直接理解 Graph State；facts module 可以调用该分析服务，但不能依赖 LangChain、LLM 或完整 Graph State；进度 module 只定义事件契约并解析流式增量，不能依赖终端库，Rich 呈现只存在于 CLI；报告写入器只接受已渲染 Markdown 与证据包。只有 orchestrator 知道 Graph 拓扑和 Agent 调用顺序；只有报告交付 module 知道如何从跨 Agent 输出编排完整报告、聚合证据、渲染引用并构造审计证据包；只有 facts module 理解强类型财务分析结果到 State 确定性字段的投影。
 
 ## 6. 当前存在但不属于正式源码树的目录
 
@@ -356,4 +369,4 @@ tests -> every production layer, but production code never imports tests
 
 ### 调整错误与可观测性
 
-预期业务错误应继承 `StockAgentError`，这样 CLI 能以用户可读的方式终止。工具生命周期日志应通过 `AgentProgressCallbackHandler` 扩展映射，不要把完整模型 messages、原始工具参数或敏感信息写入日志。
+预期业务错误应继承 `StockAgentError`，这样 CLI 能以用户可读的方式终止。工具与模型增量应由 `agents/progress.py` 翻译为 `ProgressReporter` 事件；新增工具可扩展中文阶段名映射，未映射名称会直接回退到工具原名。终端呈现只在 CLI 实现，工具调用参数不进入进度事件、实时区域或固化日志，也不要记录完整模型 messages 或其他敏感信息。

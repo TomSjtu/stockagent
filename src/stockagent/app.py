@@ -7,10 +7,14 @@ from stockagent.config import CLIOptions, load_app_config
 from stockagent.observability import get_logger
 
 if TYPE_CHECKING:
+    from stockagent.agents.progress import ProgressReporter
     from stockagent.report.writer import ReportArtifacts
 
 
-def run_stock_analysis(options: CLIOptions) -> ReportArtifacts:
+def run_stock_analysis(
+    options: CLIOptions,
+    progress_reporter: ProgressReporter,
+) -> ReportArtifacts:
     """Run one report workflow and write its paired delivery artifacts.
 
     Raises ConfigurationError when a required external-service credential is absent.
@@ -24,14 +28,13 @@ def run_stock_analysis(options: CLIOptions) -> ReportArtifacts:
 
     set_identity(config.edgar_identity)
     logger.info("加载 LLM 配置完成")
-    logger.info("启动主分析 agent")
     # 调用 Agent 图，取得渲染后的 Markdown 和其 EvidenceBundle
     report = run_stock_analysis_agent(
         options.ticker,
         options.years,
         config.llm,
+        progress_reporter,
     )
-    logger.info("主分析 agent 完成")
     logger.info("开始写入报告")
     # 将同一个 date.today() 值传给交付函数，用于两个输出文件的共同名称和 manifest 日期
     return write_report_artifacts(

@@ -37,6 +37,7 @@ class OrchestratorRunnerTest(unittest.TestCase):
         )
 
     def test_run_stock_analysis_agent_builds_dag_and_returns_delivery(self) -> None:
+        progress_reporter = object()
         evidence = Evidence(
             id="industry-1",
             kind="web",
@@ -75,11 +76,24 @@ class OrchestratorRunnerTest(unittest.TestCase):
         )
 
         with (
-            patch("stockagent.agents.orchestrator.build_model", return_value="model") as build_model,
-            patch("stockagent.agents.orchestrator.build_analysis_nodes", return_value="nodes") as build_nodes,
-            patch("stockagent.agents.orchestrator.build_analysis_graph", return_value=graph) as build_graph,
+            patch(
+                "stockagent.agents.orchestrator.build_model", return_value="model"
+            ) as build_model,
+            patch(
+                "stockagent.agents.orchestrator.build_analysis_nodes",
+                return_value="nodes",
+            ) as build_nodes,
+            patch(
+                "stockagent.agents.orchestrator.build_analysis_graph",
+                return_value=graph,
+            ) as build_graph,
         ):
-            report = run_stock_analysis_agent("nvda", 3, self.llm_config)
+            report = run_stock_analysis_agent(
+                "nvda",
+                3,
+                self.llm_config,
+                progress_reporter,
+            )
 
         self.assertIn("# NVDA 研究报告", report.markdown)
         self.assertIn("## 摘要\n\n行业结论 [^1]", report.markdown)
@@ -87,11 +101,12 @@ class OrchestratorRunnerTest(unittest.TestCase):
         self.assertEqual(report.evidence_bundle.evidence, [evidence])
         self.assertEqual(report.evidence_bundle.cited_evidence_ids, ["industry-1"])
         build_model.assert_called_once_with(self.llm_config)
-        build_nodes.assert_called_once_with("model")
+        build_nodes.assert_called_once_with("model", progress_reporter)
         build_graph.assert_called_once_with("nodes")
         self.assertEqual(graph.initial_state, {"ticker": "nvda", "years": 3})
 
     def test_run_stock_analysis_agent_rejects_missing_synthesis(self) -> None:
+        progress_reporter = object()
         graph = FakeGraph(
             {
                 "ticker": "NVDA",
@@ -113,13 +128,27 @@ class OrchestratorRunnerTest(unittest.TestCase):
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
-            patch("stockagent.agents.orchestrator.build_analysis_nodes", return_value="nodes"),
-            patch("stockagent.agents.orchestrator.build_analysis_graph", return_value=graph),
+            patch(
+                "stockagent.agents.orchestrator.build_analysis_nodes",
+                return_value="nodes",
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_analysis_graph",
+                return_value=graph,
+            ),
         ):
             with self.assertRaisesRegex(AgentOutputError, "synthesis"):
-                run_stock_analysis_agent("NVDA", 3, self.llm_config)
+                run_stock_analysis_agent(
+                    "NVDA",
+                    3,
+                    self.llm_config,
+                    progress_reporter,
+                )
 
-    def test_run_stock_analysis_agent_includes_financial_filings_as_sec_evidence(self) -> None:
+    def test_run_stock_analysis_agent_includes_financial_filings_as_sec_evidence(
+        self,
+    ) -> None:
+        progress_reporter = object()
         filing = SecFilingReference(
             form="10-K",
             fiscal_year=2024,
@@ -166,15 +195,29 @@ class OrchestratorRunnerTest(unittest.TestCase):
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
-            patch("stockagent.agents.orchestrator.build_analysis_nodes", return_value="nodes"),
-            patch("stockagent.agents.orchestrator.build_analysis_graph", return_value=graph),
+            patch(
+                "stockagent.agents.orchestrator.build_analysis_nodes",
+                return_value="nodes",
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_analysis_graph",
+                return_value=graph,
+            ),
         ):
-            report = run_stock_analysis_agent("nvda", 3, self.llm_config)
+            report = run_stock_analysis_agent(
+                "nvda",
+                3,
+                self.llm_config,
+                progress_reporter,
+            )
 
         self.assertEqual(report.evidence_bundle.cited_evidence_ids, ["sec-2024"])
         self.assertEqual(report.evidence_bundle.financial_filings, [filing])
         self.assertEqual(report.evidence_bundle.evidence[0].id, "sec-2024")
-        self.assertEqual(report.evidence_bundle.evidence[0].title, "SEC 10-K｜截至 2024-12-31｜Filed 2025-02-20")
+        self.assertEqual(
+            report.evidence_bundle.evidence[0].title,
+            "SEC 10-K｜截至 2024-12-31｜Filed 2025-02-20",
+        )
 
 
 if __name__ == "__main__":

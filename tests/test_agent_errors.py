@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from langchain_core.messages import AIMessage
+
 from stockagent.agents import run_stock_analysis_agent
 from stockagent.agents.errors import (
     AgentError,
@@ -88,6 +90,7 @@ class AgentErrorsTest(unittest.TestCase):
             build_model(llm_config)
 
     def test_run_stock_analysis_agent_wraps_timeout_errors(self) -> None:
+        progress_reporter = object()
         llm_config = LLMConfig(
             api_key="test-key",
             base_url="https://example.test/v1",
@@ -96,18 +99,27 @@ class AgentErrorsTest(unittest.TestCase):
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
-            patch("stockagent.agents.orchestrator.build_analysis_nodes", return_value="nodes"),
+            patch(
+                "stockagent.agents.orchestrator.build_analysis_nodes",
+                return_value="nodes",
+            ),
             patch(
                 "stockagent.agents.orchestrator.build_analysis_graph",
                 return_value=FakeGraph(TimeoutError("request timed out")),
             ),
         ):
             with self.assertRaises(LLMTimeoutError) as context:
-                run_stock_analysis_agent("NVDA", 3, llm_config)
+                run_stock_analysis_agent(
+                    "NVDA",
+                    3,
+                    llm_config,
+                    progress_reporter,
+                )
 
         self.assertEqual(context.exception.model, DEFAULT_LLM_MODEL)
 
     def test_run_stock_analysis_agent_wraps_non_timeout_errors(self) -> None:
+        progress_reporter = object()
         llm_config = LLMConfig(
             api_key="test-key",
             base_url="https://example.test/v1",
@@ -116,14 +128,22 @@ class AgentErrorsTest(unittest.TestCase):
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
-            patch("stockagent.agents.orchestrator.build_analysis_nodes", return_value="nodes"),
+            patch(
+                "stockagent.agents.orchestrator.build_analysis_nodes",
+                return_value="nodes",
+            ),
             patch(
                 "stockagent.agents.orchestrator.build_analysis_graph",
                 return_value=FakeGraph(RuntimeError("bad response")),
             ),
         ):
             with self.assertRaises(LLMResponseError):
-                run_stock_analysis_agent("NVDA", 3, llm_config)
+                run_stock_analysis_agent(
+                    "NVDA",
+                    3,
+                    llm_config,
+                    progress_reporter,
+                )
 
     def test_build_openai_model_enables_responses_api_for_native_openai(self) -> None:
         llm_config = LLMConfig(
@@ -132,7 +152,9 @@ class AgentErrorsTest(unittest.TestCase):
             model=DEFAULT_LLM_MODEL,
         )
 
-        with patch("langchain_openai.ChatOpenAI", return_value="chat-openai") as chat_openai:
+        with patch(
+            "langchain_openai.ChatOpenAI", return_value="chat-openai"
+        ) as chat_openai:
             model = build_openai_model(llm_config, "gpt-5.5")
 
         chat_openai.assert_called_once_with(
@@ -144,14 +166,18 @@ class AgentErrorsTest(unittest.TestCase):
         )
         self.assertEqual(model, "chat-openai")
 
-    def test_build_openai_model_disables_responses_api_for_custom_base_url(self) -> None:
+    def test_build_openai_model_disables_responses_api_for_custom_base_url(
+        self,
+    ) -> None:
         llm_config = LLMConfig(
             api_key="test-key",
             base_url="https://relay.example.com/v1",
             model=DEFAULT_LLM_MODEL,
         )
 
-        with patch("langchain_openai.ChatOpenAI", return_value="chat-openai") as chat_openai:
+        with patch(
+            "langchain_openai.ChatOpenAI", return_value="chat-openai"
+        ) as chat_openai:
             model = build_openai_model(llm_config, "gpt-5.5")
 
         chat_openai.assert_called_once_with(
@@ -159,8 +185,59 @@ class AgentErrorsTest(unittest.TestCase):
             api_key="test-key",
             base_url="https://relay.example.com/v1",
             timeout=180,
+            disable_streaming="tool_calling",
         )
         self.assertEqual(model, "chat-openai")
+
+    def test_custom_openai_model_bypasses_streaming_for_tool_calls(self) -> None:
+        from langchain_openai import ChatOpenAI
+
+        llm_config = LLMConfig(
+            api_key="test-key",
+            base_url="https://relay.example.com/v1",
+            model=DEFAULT_LLM_MODEL,
+        )
+        model = build_openai_model(llm_config, "gpt-5.5").bind_tools(
+            [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "description": "Search the web.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}},
+                            "required": ["query"],
+                        },
+                    },
+                }
+            ]
+        )
+        response = AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "web_search",
+                    "args": {"query": "AAPL industry trends"},
+                    "id": "call-complete",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+        with (
+            patch.object(
+                ChatOpenAI,
+                "_stream",
+                side_effect=AssertionError("tool request used token streaming"),
+            ) as stream_model,
+            patch.object(ChatOpenAI, "invoke", return_value=response) as invoke_model,
+        ):
+            chunks = list(model.stream("Search for AAPL industry trends."))
+
+        self.assertEqual(chunks, [response])
+        stream_model.assert_not_called()
+        invoke_model.assert_called_once()
 
 
 if __name__ == "__main__":

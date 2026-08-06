@@ -36,6 +36,11 @@ def build_openai_model(llm_config: LLMConfig, model_name: str):
     # base_url 为空或主机名为 *.openai.com 时，在 llm_kwargs 中加入 use_responses_api=True
     if _is_native_openai_base_url(llm_config.base_url):
         llm_kwargs["use_responses_api"] = True
+    else:
+        # Compatible endpoints do not always preserve tool-call indexes across
+        # streamed chunks. Fall back to one complete response for tool requests
+        # so arguments and call IDs cannot be split into separate calls.
+        llm_kwargs["disable_streaming"] = "tool_calling"
 
     return ChatOpenAI(
         **llm_kwargs,

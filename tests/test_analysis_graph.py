@@ -21,7 +21,6 @@ from stockagent.agents.state import (
     ValuationAgentOutput,
     ValuationOutput,
 )
-from stockagent.fundamentals.analysis import FundamentalsAnalysis
 from stockagent.financials import (
     CashFlowMetrics,
     FinancialRecord,
@@ -29,6 +28,7 @@ from stockagent.financials import (
     ProfitabilityMetrics,
     SecFilingReference,
 )
+from stockagent.fundamentals.analysis import FundamentalsAnalysis
 from stockagent.report.composer import AnnualFinancialSnapshot
 from stockagent.report.delivery import deliver_report
 
@@ -197,9 +197,7 @@ class AnalysisGraphTest(unittest.TestCase):
         graph.invoke({"ticker": "AAPL", "years": 3})
 
         self.assertEqual(len(valuation_inputs), 1)
-        self.assertTrue(
-            {"industry", "fundamentals"}.issubset(valuation_inputs[0])
-        )
+        self.assertTrue({"industry", "fundamentals"}.issubset(valuation_inputs[0]))
 
 
 class ReportCompositionFlowTest(unittest.TestCase):
@@ -323,9 +321,14 @@ class ReportCompositionFlowTest(unittest.TestCase):
                 "stockagent.agents.orchestrator.build_risk_agent",
                 return_value=FakeAgent(agent_results["risk"]),
             ),
-            patch("stockagent.agents.facts._analysis.analyze_fundamentals", return_value=analysis),
+            patch(
+                "stockagent.agents.facts._analysis.analyze_fundamentals",
+                return_value=analysis,
+            ),
         ):
-            graph = build_analysis_graph(build_analysis_nodes(model))
+            graph = build_analysis_graph(
+                build_analysis_nodes(model, FakeProgressReporter())
+            )
             result = graph.invoke({"ticker": "aapl", "years": 2})
 
         delivery = deliver_report(result)
@@ -365,7 +368,9 @@ class ReportCompositionFlowTest(unittest.TestCase):
             return {
                 "industry": IndustryOutput(
                     narrative="行业正文 [industry-1]",
-                    evidence=[self._evidence("industry-1", "行业来源", "industry_analyst")],
+                    evidence=[
+                        self._evidence("industry-1", "行业来源", "industry_analyst")
+                    ],
                 )
             }
 
@@ -409,7 +414,9 @@ class ReportCompositionFlowTest(unittest.TestCase):
                     pe_ratio=20.0,
                     pb_ratio=3.0,
                     ps_ratio=5.0,
-                    evidence=[self._evidence("valuation-1", "估值来源", "valuation_analyst")],
+                    evidence=[
+                        self._evidence("valuation-1", "估值来源", "valuation_analyst")
+                    ],
                 )
             }
 
@@ -429,7 +436,10 @@ class ReportCompositionFlowTest(unittest.TestCase):
                 fundamentals=fundamentals,
                 valuation=valuation,
                 risk=risk,
-                synthesize=_build_synthesize_node(model),
+                synthesize=_build_synthesize_node(
+                    model,
+                    FakeProgressReporter(),
+                ),
             )
         )
 
@@ -519,8 +529,28 @@ class FakeAgent:
     def __init__(self, result: object) -> None:
         self.result = result
 
-    def invoke(self, _payload: object, config: object | None = None) -> object:
-        return self.result
+    def stream(self, _payload: object, *, stream_mode: object) -> object:
+        yield ("values", self.result)
+
+
+class FakeProgressReporter:
+    def agent_started(self, agent: str) -> None:
+        pass
+
+    def agent_finished(self, agent: str, elapsed_seconds: float) -> None:
+        pass
+
+    def tool_started(self, agent: str, tool: str) -> None:
+        pass
+
+    def tool_finished(self, agent: str, tool: str) -> None:
+        pass
+
+    def tool_failed(self, agent: str, tool: str, detail: str) -> None:
+        pass
+
+    def model_output(self, agent: str, produced_characters: int) -> None:
+        pass
 
 
 if __name__ == "__main__":
