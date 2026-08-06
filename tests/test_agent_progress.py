@@ -44,6 +44,23 @@ class RichProgressReporterTest(unittest.TestCase):
             ],
         )
 
+    def test_logs_tool_start_without_arguments(self) -> None:
+        reporter = RichProgressReporter(Console(force_terminal=False))
+
+        with self.assertLogs("stockagent.cli", level="INFO") as logs:
+            reporter.tool_started(
+                "fundamentals_analyst",
+                "获取并分析公司基本面",
+            )
+
+        self.assertEqual(
+            logs.output,
+            [
+                "INFO:stockagent.cli:agent fundamentals_analyst 开始: "
+                "获取并分析公司基本面"
+            ],
+        )
+
     def test_context_stops_live_region_when_analysis_fails(self) -> None:
         reporter = RichProgressReporter(
             Console(force_terminal=True, no_color=False)
@@ -76,7 +93,6 @@ class RichProgressReporterTest(unittest.TestCase):
             reporter.tool_started(
                 "industry_analyst",
                 "搜索市场与行业信息",
-                "AAPL",
             )
             reporter.tool_finished(
                 "industry_analyst",

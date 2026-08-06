@@ -75,16 +75,15 @@ class RichProgressReporter(AbstractContextManager["RichProgressReporter"]):
             elapsed_seconds,
         )
 
-    def tool_started(self, agent: str, tool: str, args_summary: str) -> None:
-        suffix = f"（{args_summary}）" if args_summary else ""
+    def tool_started(self, agent: str, tool: str) -> None:
         with self._lock:
             progress = self._agents.get(agent)
             if progress is not None:
-                progress.activity = f"{tool}{suffix}"
+                progress.activity = tool
                 progress.failed = False
         self._refresh()
         if not self._live_enabled:
-            self._logger.info("agent %s 开始: %s%s", agent, tool, suffix)
+            self._logger.info("agent %s 开始: %s", agent, tool)
 
     def tool_finished(self, agent: str, tool: str) -> None:
         with self._lock:

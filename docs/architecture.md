@@ -369,4 +369,4 @@ tests -> every production layer, but production code never imports tests
 
 ### 调整错误与可观测性
 
-预期业务错误应继承 `StockAgentError`，这样 CLI 能以用户可读的方式终止。工具与模型增量应由 `agents/progress.py` 翻译为 `ProgressReporter` 事件；新增工具可扩展中文阶段名映射，未映射名称会直接回退到工具原名。终端呈现只在 CLI 实现，不要把完整模型 messages、未截断的原始工具参数或敏感信息写入日志。
+预期业务错误应继承 `StockAgentError`，这样 CLI 能以用户可读的方式终止。工具与模型增量应由 `agents/progress.py` 翻译为 `ProgressReporter` 事件；新增工具可扩展中文阶段名映射，未映射名称会直接回退到工具原名。终端呈现只在 CLI 实现，工具调用参数不进入进度事件、实时区域或固化日志，也不要记录完整模型 messages 或其他敏感信息。

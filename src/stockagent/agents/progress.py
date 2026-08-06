@@ -26,7 +26,7 @@ class ProgressReporter(Protocol):
         """Report that one agent has finished and include its elapsed time."""
         ...
 
-    def tool_started(self, agent: str, tool: str, args_summary: str) -> None:
+    def tool_started(self, agent: str, tool: str) -> None:
         """Report that an agent has started one tool call."""
         ...
 
@@ -91,10 +91,10 @@ class ModelGenerationProgress(
     def agent_finished(self, agent: str, elapsed_seconds: float) -> None:
         self._progress_reporter.agent_finished(agent, elapsed_seconds)
 
-    def tool_started(self, agent: str, tool: str, args_summary: str) -> None:
+    def tool_started(self, agent: str, tool: str) -> None:
         with self._lock:
             self._active_tools += 1
-            self._progress_reporter.tool_started(agent, tool, args_summary)
+            self._progress_reporter.tool_started(agent, tool)
 
     def tool_finished(self, agent: str, tool: str) -> None:
         with self._lock:
@@ -134,9 +134,6 @@ _STAGE_DISPLAY_NAMES = {
     ("risk_analyst", "web_search"): "搜索近期公司风险信息",
 }
 
-_ARGS_SUMMARY_WIDTH = 60
-
-
 def report_agent_update(
     update: object,
     *,
@@ -156,7 +153,6 @@ def report_agent_update(
                 progress_reporter.tool_started(
                     agent_name,
                     _stage_name(agent_name, tool_name),
-                    _args_summary(tool_call.get("args")),
                 )
         elif isinstance(message, ToolMessage):
             tool_name = message.name or "unknown tool"
@@ -209,26 +205,6 @@ def _messages_in(value: object) -> Iterable[BaseMessage]:
     elif isinstance(value, (list, tuple)):
         for nested in value:
             yield from _messages_in(nested)
-
-
-def _args_summary(args: object) -> str:
-    if args is None:
-        return ""
-    if isinstance(args, str):
-        summary = args
-    else:
-        try:
-            summary = json.dumps(
-                args,
-                ensure_ascii=False,
-                separators=(",", ":"),
-                default=str,
-            )
-        except (TypeError, ValueError):
-            summary = str(args)
-    if len(summary) <= _ARGS_SUMMARY_WIDTH:
-        return summary
-    return f"{summary[: _ARGS_SUMMARY_WIDTH - 1]}…"
 
 
 def _message_detail(content: Any) -> str:

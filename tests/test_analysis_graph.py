@@ -540,7 +540,7 @@ class FakeProgressReporter:
     def agent_finished(self, agent: str, elapsed_seconds: float) -> None:
         pass
 
-    def tool_started(self, agent: str, tool: str, args_summary: str) -> None:
+    def tool_started(self, agent: str, tool: str) -> None:
         pass
 
     def tool_finished(self, agent: str, tool: str) -> None:

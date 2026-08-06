@@ -129,8 +129,8 @@ class FakeProgressReporter:
     def agent_finished(self, agent: str, elapsed_seconds: float) -> None:
         self.events.append(("agent_finished", agent, elapsed_seconds))
 
-    def tool_started(self, agent: str, tool: str, args_summary: str) -> None:
-        self.events.append(("tool_started", agent, tool, args_summary))
+    def tool_started(self, agent: str, tool: str) -> None:
+        self.events.append(("tool_started", agent, tool))
 
     def tool_finished(self, agent: str, tool: str) -> None:
         self.events.append(("tool_finished", agent, tool))
@@ -371,7 +371,7 @@ class AnalysisNodesTest(unittest.TestCase):
         sleep(0.02)
         self.assertEqual(len(self.progress_reporter.events), event_count)
 
-    def test_agent_stream_reports_tool_events_with_args_and_name_fallback(
+    def test_agent_stream_reports_tool_events_without_args_and_with_name_fallback(
         self,
     ) -> None:
         output = IndustryOutput(narrative="Industry", evidence=[])
@@ -430,22 +430,24 @@ class AnalysisNodesTest(unittest.TestCase):
 
         self.assertEqual(result, {"industry": output})
         tool_events = self.progress_reporter.events[1:-1]
-        self.assertEqual(tool_events[0][:3], (
-            "tool_started",
-            "industry_analyst",
-            "搜索市场与行业信息",
-        ))
-        self.assertLessEqual(len(tool_events[0][3]), 60)
-        self.assertIn("AAPL", tool_events[0][3])
+        self.assertEqual(
+            tool_events[0],
+            (
+                "tool_started",
+                "industry_analyst",
+                "搜索市场与行业信息",
+            ),
+        )
         self.assertEqual(
             tool_events[1],
             (
                 "tool_started",
                 "industry_analyst",
                 "custom_lookup",
-                '{"ticker":"AAPL"}',
             ),
         )
+        self.assertNotIn(query, repr(tool_events))
+        self.assertNotIn('{"ticker":"AAPL"}', repr(tool_events))
         self.assertEqual(
             tool_events[2],
             (
