@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from stockagent.financials import GrowthMetrics
+from stockagent.financials import FinancialRecord, GrowthMetrics
 from stockagent.fundamentals.cash_flow import free_cash_flow
-from stockagent.fundamentals.inputs import GrowthInput
 
 
 def _safe_growth(current: float | None, previous: float | None) -> float | None:
@@ -26,27 +25,28 @@ def _safe_cagr(
     return (current / beginning) ** (1 / periods) - 1
 
 
-def _free_cash_flow(gi: GrowthInput) -> float | None:
-    return free_cash_flow(gi.operating_cash_flow, gi.capex)
-
-
-def compute_growth_series(inputs: list[GrowthInput]) -> list[GrowthMetrics]:
+def compute_growth_series(records: list[FinancialRecord]) -> list[GrowthMetrics]:
     """Compute YoY growth and CAGR metrics for multiple years."""
     # 按 fiscal_year 排序；首项作为 CAGR 起点，前一项作为同比基数
-    sorted_inputs = sorted(inputs, key=lambda item: item.fiscal_year)
-    if not sorted_inputs:
+    sorted_records = sorted(records, key=lambda item: item.fiscal_year)
+    if not sorted_records:
         return []
 
-    first = sorted_inputs[0]
-    first_free_cash_flow = _free_cash_flow(first)
+    first = sorted_records[0]
+    first_free_cash_flow = free_cash_flow(first.operating_cash_flow, first.capex)
     metrics: list[GrowthMetrics] = []
 
-    previous: GrowthInput | None = None
-    for current in sorted_inputs:
+    previous: FinancialRecord | None = None
+    for current in sorted_records:
         periods = current.fiscal_year - first.fiscal_year
-        current_free_cash_flow = _free_cash_flow(current)
+        current_free_cash_flow = free_cash_flow(
+            current.operating_cash_flow,
+            current.capex,
+        )
         previous_free_cash_flow = (
-            _free_cash_flow(previous) if previous is not None else None
+            free_cash_flow(previous.operating_cash_flow, previous.capex)
+            if previous is not None
+            else None
         )
 
         metrics.append(

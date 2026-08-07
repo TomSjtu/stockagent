@@ -6,33 +6,6 @@ from stockagent.financials import FinancialRecord
 
 
 @dataclass(slots=True, frozen=True)
-class GrowthInput:
-    """Minimum fields needed to compute growth metrics."""
-
-    # 与输出指标关联的年度标签，决定同比与 CAGR 期间长度
-    fiscal_year: int
-    # 年度收入
-    revenue: float | None
-    # 年度净利润
-    net_income: float | None
-    # 年度经营现金流
-    operating_cash_flow: float | None
-    # 年度资本开支，用于派生自由现金流
-    capex: float | None
-
-    @classmethod
-    def from_record(cls, record: FinancialRecord) -> "GrowthInput":
-        """Project only the fields required by growth formulas."""
-        return cls(
-            fiscal_year=record.fiscal_year,
-            revenue=record.revenue,
-            net_income=record.net_income,
-            operating_cash_flow=record.operating_cash_flow,
-            capex=record.capex,
-        )
-
-
-@dataclass(slots=True, frozen=True)
 class ValuationInput:
     """Minimum fields needed to compute valuation metrics."""
 
@@ -68,13 +41,6 @@ class ValuationInput:
             eps_diluted=record.eps_diluted,
             shareholders_equity=record.shareholders_equity,
         )
-
-
-def build_growth_inputs(
-    records: list[FinancialRecord],
-) -> list[GrowthInput]:
-    """Project an annual record series for growth formulas."""
-    return [GrowthInput.from_record(record) for record in records]
 
 
 def build_valuation_input(

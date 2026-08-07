@@ -9,9 +9,7 @@ from stockagent.fundamentals.financial_health import (
 )
 from stockagent.fundamentals.growth import compute_growth_series
 from stockagent.fundamentals.inputs import (
-    GrowthInput,
     ValuationInput,
-    build_growth_inputs,
     build_valuation_input,
 )
 from stockagent.fundamentals.profitability import (
@@ -21,9 +19,7 @@ from stockagent.fundamentals.profitability import (
 from stockagent.fundamentals.valuation import compute_valuation
 
 __all__ = [
-    "GrowthInput",
     "ValuationInput",
-    "build_growth_inputs",
     "build_valuation_input",
     "compute_cash_flow",
     "compute_cash_flow_series",
