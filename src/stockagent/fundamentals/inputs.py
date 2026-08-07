@@ -6,42 +6,6 @@ from stockagent.financials import FinancialRecord
 
 
 @dataclass(slots=True, frozen=True)
-class FinancialHealthInput:
-    """Minimum fields needed to compute financial health metrics."""
-
-    # 与输出指标关联的年度标签
-    fiscal_year: int
-    # 财年末总资产
-    total_assets: float | None
-    # 财年末流动资产
-    current_assets: float | None
-    # 财年末现金及现金等价物
-    cash_and_equivalents: float | None
-    # 财年末负债总额
-    total_liabilities: float | None
-    # 财年末流动负债
-    current_liabilities: float | None
-    # 财年末股东权益
-    shareholders_equity: float | None
-    # 年度经营现金流
-    operating_cash_flow: float | None
-
-    @classmethod
-    def from_record(cls, record: FinancialRecord) -> "FinancialHealthInput":
-        """Project only the fields required by financial-health formulas."""
-        return cls(
-            fiscal_year=record.fiscal_year,
-            total_assets=record.total_assets,
-            current_assets=record.current_assets,
-            cash_and_equivalents=record.cash_and_equivalents,
-            total_liabilities=record.total_liabilities,
-            current_liabilities=record.current_liabilities,
-            shareholders_equity=record.shareholders_equity,
-            operating_cash_flow=record.operating_cash_flow,
-        )
-
-
-@dataclass(slots=True, frozen=True)
 class GrowthInput:
     """Minimum fields needed to compute growth metrics."""
 
@@ -104,13 +68,6 @@ class ValuationInput:
             eps_diluted=record.eps_diluted,
             shareholders_equity=record.shareholders_equity,
         )
-
-
-def build_financial_health_inputs(
-    records: list[FinancialRecord],
-) -> list[FinancialHealthInput]:
-    """Project an annual record series for financial-health formulas."""
-    return [FinancialHealthInput.from_record(record) for record in records]
 
 
 def build_growth_inputs(
