@@ -3,16 +3,11 @@ from __future__ import annotations
 import unittest
 
 from stockagent.financials import FinancialRecord
-from stockagent.fundamentals import (
-    ProfitabilityInput,
-    build_profitability_inputs,
-    compute_profitability,
-    compute_profitability_series,
-)
+from stockagent.fundamentals import compute_profitability
 
 
-class ProfitabilityInputTest(unittest.TestCase):
-    def test_from_record_maps_only_profitability_fields(self) -> None:
+class ProfitabilityMetricsTest(unittest.TestCase):
+    def test_compute_profitability_calculates_ratios(self) -> None:
         record = FinancialRecord(
             ticker="FAKE",
             company_name="Fake Inc.",
@@ -26,39 +21,9 @@ class ProfitabilityInputTest(unittest.TestCase):
             total_assets=200.0,
             current_liabilities=50.0,
             shareholders_equity=100.0,
-            operating_cash_flow=35.0,
         )
 
-        profitability_input = ProfitabilityInput.from_record(record)
-
-        self.assertEqual(profitability_input.fiscal_year, 2024)
-        self.assertEqual(profitability_input.revenue, 100.0)
-        self.assertEqual(profitability_input.gross_profit, 40.0)
-        self.assertEqual(profitability_input.operating_income, 30.0)
-        self.assertEqual(profitability_input.net_income, 20.0)
-        self.assertEqual(profitability_input.rd_expense, 5.0)
-        self.assertEqual(profitability_input.sga_expense, 10.0)
-        self.assertEqual(profitability_input.total_assets, 200.0)
-        self.assertEqual(profitability_input.current_liabilities, 50.0)
-        self.assertEqual(profitability_input.shareholders_equity, 100.0)
-
-
-class ProfitabilityMetricsTest(unittest.TestCase):
-    def test_compute_profitability_calculates_ratios(self) -> None:
-        profitability_input = ProfitabilityInput(
-            fiscal_year=2024,
-            revenue=100.0,
-            gross_profit=40.0,
-            operating_income=30.0,
-            net_income=20.0,
-            rd_expense=5.0,
-            sga_expense=10.0,
-            total_assets=200.0,
-            current_liabilities=50.0,
-            shareholders_equity=100.0,
-        )
-
-        metrics = compute_profitability(profitability_input)
+        metrics = compute_profitability(record)
 
         self.assertEqual(metrics.gross_margin, 0.4)
         self.assertEqual(metrics.operating_margin, 0.3)
@@ -70,7 +35,9 @@ class ProfitabilityMetricsTest(unittest.TestCase):
         self.assertEqual(metrics.roce, 0.2)
 
     def test_compute_profitability_returns_none_for_missing_or_zero_denominators(self) -> None:
-        profitability_input = ProfitabilityInput(
+        record = FinancialRecord(
+            ticker="FAKE",
+            company_name="Fake Inc.",
             fiscal_year=2024,
             revenue=0.0,
             gross_profit=40.0,
@@ -83,7 +50,7 @@ class ProfitabilityMetricsTest(unittest.TestCase):
             shareholders_equity=0.0,
         )
 
-        metrics = compute_profitability(profitability_input)
+        metrics = compute_profitability(record)
 
         self.assertIsNone(metrics.gross_margin)
         self.assertIsNone(metrics.operating_margin)
@@ -93,17 +60,6 @@ class ProfitabilityMetricsTest(unittest.TestCase):
         self.assertIsNone(metrics.roa)
         self.assertIsNone(metrics.roe)
         self.assertIsNone(metrics.roce)
-
-    def test_compute_profitability_series_sorts_by_fiscal_year(self) -> None:
-        records = [
-            FinancialRecord("FAKE", "Fake Inc.", 2024, revenue=100.0),
-            FinancialRecord("FAKE", "Fake Inc.", 2023, revenue=90.0),
-        ]
-
-        inputs = build_profitability_inputs(records)
-        metrics = compute_profitability_series(inputs)
-
-        self.assertEqual([item.fiscal_year for item in metrics], [2023, 2024])
 
 
 if __name__ == "__main__":

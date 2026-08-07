@@ -6,48 +6,6 @@ from stockagent.financials import FinancialRecord
 
 
 @dataclass(slots=True, frozen=True)
-class ProfitabilityInput:
-    """Minimum fields needed to compute profitability metrics."""
-
-    # 与输出指标关联的年度标签
-    fiscal_year: int
-    # 年度收入，是利润率与费用率的共同分母
-    revenue: float | None
-    # 年度毛利
-    gross_profit: float | None
-    # 年度营业利润
-    operating_income: float | None
-    # 年度净利润
-    net_income: float | None
-    # 年度研发费用
-    rd_expense: float | None
-    # 年度销售、一般及管理费用
-    sga_expense: float | None
-    # 财年末总资产
-    total_assets: float | None
-    # 财年末流动负债，用于资本占用额
-    current_liabilities: float | None
-    # 财年末股东权益
-    shareholders_equity: float | None
-
-    @classmethod
-    def from_record(cls, record: FinancialRecord) -> "ProfitabilityInput":
-        """Project only the fields required by profitability formulas."""
-        return cls(
-            fiscal_year=record.fiscal_year,
-            revenue=record.revenue,
-            gross_profit=record.gross_profit,
-            operating_income=record.operating_income,
-            net_income=record.net_income,
-            rd_expense=record.rd_expense,
-            sga_expense=record.sga_expense,
-            total_assets=record.total_assets,
-            current_liabilities=record.current_liabilities,
-            shareholders_equity=record.shareholders_equity,
-        )
-
-
-@dataclass(slots=True, frozen=True)
 class FinancialHealthInput:
     """Minimum fields needed to compute financial health metrics."""
 
@@ -146,13 +104,6 @@ class ValuationInput:
             eps_diluted=record.eps_diluted,
             shareholders_equity=record.shareholders_equity,
         )
-
-
-def build_profitability_inputs(
-    records: list[FinancialRecord],
-) -> list[ProfitabilityInput]:
-    """Project an annual record series for profitability formulas."""
-    return [ProfitabilityInput.from_record(record) for record in records]
 
 
 def build_financial_health_inputs(
