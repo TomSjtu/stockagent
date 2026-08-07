@@ -6,27 +6,6 @@ from stockagent.financials import FinancialRecord
 
 
 @dataclass(slots=True, frozen=True)
-class CashFlowInput:
-    """Minimum fields needed to compute cash flow metrics."""
-
-    # 与输出指标关联的年度标签
-    fiscal_year: int
-    # 年度经营现金流；None 必须传播为不可计算
-    operating_cash_flow: float | None
-    # 年度资本开支，保留 FinancialRecord 的金额单位和符号
-    capex: float | None
-
-    @classmethod
-    def from_record(cls, record: FinancialRecord) -> "CashFlowInput":
-        """Project the cash-flow fields from a standardized annual record."""
-        return cls(
-            fiscal_year=record.fiscal_year,
-            operating_cash_flow=record.operating_cash_flow,
-            capex=record.capex,
-        )
-
-
-@dataclass(slots=True, frozen=True)
 class ProfitabilityInput:
     """Minimum fields needed to compute profitability metrics."""
 
@@ -66,7 +45,6 @@ class ProfitabilityInput:
             current_liabilities=record.current_liabilities,
             shareholders_equity=record.shareholders_equity,
         )
-
 
 
 @dataclass(slots=True, frozen=True)
@@ -175,13 +153,6 @@ def build_profitability_inputs(
 ) -> list[ProfitabilityInput]:
     """Project an annual record series for profitability formulas."""
     return [ProfitabilityInput.from_record(record) for record in records]
-
-
-def build_cash_flow_inputs(
-    records: list[FinancialRecord],
-) -> list[CashFlowInput]:
-    """Project an annual record series for cash-flow formulas."""
-    return [CashFlowInput.from_record(record) for record in records]
 
 
 def build_financial_health_inputs(

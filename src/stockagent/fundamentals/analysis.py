@@ -17,7 +17,6 @@ from stockagent.fundamentals.cash_flow import compute_cash_flow_series
 from stockagent.fundamentals.financial_health import compute_financial_health_series
 from stockagent.fundamentals.growth import compute_growth_series
 from stockagent.fundamentals.inputs import (
-    build_cash_flow_inputs,
     build_financial_health_inputs,
     build_growth_inputs,
     build_profitability_inputs,
@@ -129,9 +128,7 @@ def analyze_cash_flow(
     records: tuple[FinancialRecord, ...],
 ) -> dict[int, CashFlowMetrics]:
     """Compute cash-flow metrics indexed by fiscal year."""
-    return _index_by_year(
-        compute_cash_flow_series(build_cash_flow_inputs(list(records)))
-    )
+    return _index_by_year(compute_cash_flow_series(list(records)))
 
 
 def analyze_financial_health(

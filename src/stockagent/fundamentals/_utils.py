@@ -22,16 +22,6 @@ def safe_divide(
     return numerator / denominator
 
 
-def compute_free_cash_flow(
-    operating_cash_flow: float | None,
-    capex: float | None,
-) -> float | None:
-    """Compute free cash flow while preserving missing-input semantics."""
-    if operating_cash_flow is None or capex is None:
-        return None
-    return operating_cash_flow - capex
-
-
 def compute_series(
     fn: Callable[[_InputT], _MetricsT],
     inputs: list[_InputT],

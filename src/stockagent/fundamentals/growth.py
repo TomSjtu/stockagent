@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from stockagent.financials import GrowthMetrics
-from stockagent.fundamentals._utils import compute_free_cash_flow
+from stockagent.fundamentals.cash_flow import free_cash_flow
 from stockagent.fundamentals.inputs import GrowthInput
 
 
@@ -27,7 +27,7 @@ def _safe_cagr(
 
 
 def _free_cash_flow(gi: GrowthInput) -> float | None:
-    return compute_free_cash_flow(gi.operating_cash_flow, gi.capex)
+    return free_cash_flow(gi.operating_cash_flow, gi.capex)
 
 
 def compute_growth_series(inputs: list[GrowthInput]) -> list[GrowthMetrics]:
