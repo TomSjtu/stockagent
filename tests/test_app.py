@@ -112,7 +112,6 @@ class RunStockAnalysisTest(unittest.TestCase):
             run_stock_analysis(options, progress_reporter)
 
         self.assertIn("INFO:stockagent.app:加载 LLM 配置完成", logs.output)
-        self.assertIn("INFO:stockagent.app:开始写入报告", logs.output)
 
 
 if __name__ == "__main__":

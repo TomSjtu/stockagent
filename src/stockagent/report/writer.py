@@ -28,7 +28,7 @@ def write_report_artifacts(
 ) -> ReportArtifacts:
     """Write a Markdown report and its JSON audit sidecar together."""
     logger = get_logger(__name__)
-    logger.info("开始写入报告产物")
+    logger.info("开始写入报告")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # 用同一个日期生成 stem，并据此创建 .md 与 .sources.json 路径
@@ -46,7 +46,7 @@ def write_report_artifacts(
         ),
         encoding="utf-8",
     )
-    logger.info("报告产物写入完成: %s, %s", markdown_path, sources_path)
+    logger.info("报告写入完成: %s, %s", markdown_path, sources_path)
     return ReportArtifacts(
         markdown_path=markdown_path,
         sources_path=sources_path,

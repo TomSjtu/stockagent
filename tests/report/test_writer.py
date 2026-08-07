@@ -38,11 +38,11 @@ class ReportWriterTest(unittest.TestCase):
             self.assertEqual(payload["report_date"], "2026-06-21")
             self.assertEqual(payload["evidence"], [])
             self.assertIn(
-                "INFO:stockagent.report.writer:开始写入报告产物",
+                "INFO:stockagent.report.writer:开始写入报告",
                 logs.output,
             )
             self.assertIn(
-                "INFO:stockagent.report.writer:报告产物写入完成: "
+                "INFO:stockagent.report.writer:报告写入完成: "
                 f"{artifacts.markdown_path}, {artifacts.sources_path}",
                 logs.output,
             )

@@ -35,7 +35,7 @@ def run_stock_analysis(
         config.llm,
         progress_reporter,
     )
-    logger.info("开始写入报告")
+    
     # 将同一个 date.today() 值传给交付函数，用于两个输出文件的共同名称和 manifest 日期
     return write_report_artifacts(
         options.ticker,
