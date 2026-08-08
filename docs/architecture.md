@@ -128,7 +128,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 
 `FinancialRecord` 是外部财务数据进入领域层的唯一标准形状，覆盖利润表、资产负债表和现金流量表的核心年度字段。所有金额字段均允许为 `None`，以保留来源缺失事实；公式通过安全除法返回 `None`，而不是虚构数值。每个记录还可带 `SecFilingReference`，其中包含实际 10-K/10-K/A 的报告期、提交日、CIK、accession、主文档和 SEC Archive URL；未匹配到时该字段为 `None`，不改变计算接口。
 
-`fundamentals.analysis.fetch_financials()` 会将 ticker 规范化为大写，从容量为 32 的进程内 LRU 缓存中取记录，并要求以最新财年为结尾的连续窗口恰好包含 `years` 个年度。数据缺年会抛出 `MissingFiscalYearsError`，不会缩短分析窗口。`analyze_fundamentals()` 在同一服务中编排各类年度指标；`analyze_valuation()` 选择最新财年计算 trailing PE/PB/PS。连续窗口由分析服务保证；公式模块本身只依赖传入的 `FinancialRecord`（估值另加两个市场输入参数），不取数、不写入记录字段。
+`fundamentals.analysis.fetch_financials()` 会将 ticker 规范化为大写，从容量为 32 的进程内 LRU 缓存中取记录，并要求以最新财年为结尾的连续窗口恰好包含 `years` 个年度。数据缺年会抛出 `MissingFiscalYearsError`，不会缩短分析窗口。`analyze_fundamentals()` 在同一服务中编排各类年度指标；`analyze_valuation()` 选择最新财年计算 trailing PE/PB/PS。连续窗口由分析服务保证；公式模块本身只依赖传入的 `FinancialRecord`——逐年公式接收单条记录，跨年成长性接收整窗记录列表，估值另加两个市场输入参数——自身不取数。
 
 ### 3.4 Agent State 契约
 
@@ -235,9 +235,9 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 
 | 路径 | 作用 | 关系 |
 | --- | --- | --- |
-| `src/stockagent/fundamentals/__init__.py` | 重新导出五个指标类别入口函数。 | 为公式调用方提供稳定导入面；取数与编排由同包的 `analysis.py` 负责。 |
-| `src/stockagent/fundamentals/analysis.py` | 确定性年度分析服务：规范化 ticker，读取 EDGAR provider，缓存并校验连续财年窗口，直接以财年为键构造各类指标索引和 trailing 估值。 | 被 `tools/financials.py` 与 `agents/facts.py` 调用；依赖 `data.providers`、`financials` 和同包三个公式模块。 |
-| `src/stockagent/fundamentals/annual.py` | 逐年独立的公式：盈利能力、现金流、财务健康三个类别入口，另公开自由现金流口径 `free_cash_flow()`，私有 `_safe_divide()` 统一缺失值语义。 | 直读 `FinancialRecord`；`growth.py` 从此处导入自由现金流口径。 |
+| `src/stockagent/fundamentals/__init__.py` | 重新导出五个公式入口函数；当前只有公式层测试从这里导入，生产代码一律直接导入 `analysis` 子模块。 | 取数与编排由同包的 `analysis.py` 负责。 |
+| `src/stockagent/fundamentals/analysis.py` | 确定性年度分析服务：规范化 ticker，读取 EDGAR provider，缓存并校验连续财年窗口，以财年为键构造各类指标索引和 trailing 估值。 | 被 `tools/financials.py` 与 `agents/facts.py` 调用；依赖 `data.providers`、`financials` 和同包三个公式模块。 |
+| `src/stockagent/fundamentals/annual.py` | 逐年独立的公式：盈利能力、现金流、财务健康三个类别入口，另公开自由现金流口径 `free_cash_flow()`，模块内私有 `_safe_divide()` 统一本模块的缺失值语义。 | 直读 `FinancialRecord`；`growth.py` 从此处导入自由现金流口径。 |
 | `src/stockagent/fundamentals/growth.py` | 跨年公式：计算收入、净利润、自由现金流的同比增长和相对窗口首年的 CAGR。 | 整窗接收 `FinancialRecord` 列表；对单年、缺失值、零或负基数返回 `None`。 |
 | `src/stockagent/fundamentals/valuation.py` | 用最新财年记录和市场输入计算 trailing PE/PB/PS；PE 可从 `price / EPS` 回退到 `market_cap / net_income`。 | 唯一接收财报之外市场输入的公式模块；不从价格推断市值。 |
 
@@ -324,7 +324,7 @@ data/providers -> financials
 tests -> every production layer, but production code never imports tests
 ```
 
-依赖方向的核心规则是：无 I/O 的公式模块不能依赖 Agent、工具、配置、网络或文件系统；公式模块只读传入的 `FinancialRecord`，**不得写入它的任何字段**——`FinancialRecord` 是可变 dataclass（取数层依赖对 `filing` 字段的写入来挂载 SEC 引用），字段写入只允许发生在取数层的构造路径上；`fundamentals/analysis.py` 是允许访问 provider 的确定性服务边界。工具不能直接理解 Graph State；facts module 可以调用该分析服务，但不能依赖 LangChain、LLM 或完整 Graph State；进度 module 只定义事件契约并解析流式增量，不能依赖终端库，Rich 呈现只存在于 CLI；报告写入器只接受已渲染 Markdown 与证据包。只有 orchestrator 知道 Graph 拓扑和 Agent 调用顺序；只有报告交付 module 知道如何从跨 Agent 输出编排完整报告、聚合证据、渲染引用并构造审计证据包；只有 facts module 理解强类型财务分析结果到 State 确定性字段的投影。
+依赖方向的核心规则是：无 I/O 的公式模块不能依赖 Agent、工具、配置、网络或文件系统；公式模块只读传入的 `FinancialRecord`，不得写入它的任何字段——该记录是可变 dataclass，字段写入只允许发生在取数层的构造路径上；`fundamentals/analysis.py` 是允许访问 provider 的确定性服务边界。工具不能直接理解 Graph State；facts module 可以调用该分析服务，但不能依赖 LangChain、LLM 或完整 Graph State；进度 module 只定义事件契约并解析流式增量，不能依赖终端库，Rich 呈现只存在于 CLI；报告写入器只接受已渲染 Markdown 与证据包。只有 orchestrator 知道 Graph 拓扑和 Agent 调用顺序；只有报告交付 module 知道如何从跨 Agent 输出编排完整报告、聚合证据、渲染引用并构造审计证据包；只有 facts module 理解强类型财务分析结果到 State 确定性字段的投影。
 
 ## 6. 当前存在但不属于正式源码树的目录
 
@@ -346,9 +346,9 @@ tests -> every production layer, but production code never imports tests
 
 ### 新增指标
 
-先在 `financials/models.py` 增加结果字段或新指标 dataclass；再在对应公式模块直接读取标准化年度财务记录 `FinancialRecord` 计算，并由 `fundamentals/analysis.py` 选择性编排。没有“定义最小输入投影”这一步。
+先在 `financials/models.py` 增加结果字段或新指标 dataclass；再在对应公式模块直接读取标准化年度财务记录 `FinancialRecord` 计算，并由 `fundamentals/analysis.py` 选择性编排。
 
-新指标放哪个模块由**计算形状**决定：
+新指标放哪个模块由计算形状决定：
 
 | 计算形状 | 模块 |
 | --- | --- |
@@ -356,7 +356,7 @@ tests -> every production layer, but production code never imports tests
 | 跨年（需前一年做同比基数，或首年做复合增长起点） | `fundamentals/growth.py` |
 | 需财报之外的市场输入 | `fundamentals/valuation.py` |
 
-公式只读 `FinancialRecord`，不写入其字段。需要暴露给 LLM 时，最后才在 `tools/financials.py` 添加 JSON 工具，并在同一提交内挂到 Agent。
+公式只读记录字段，写入约束见第 5 节的依赖方向规则。需要暴露给 LLM 时，最后才在 `tools/financials.py` 添加 JSON 工具，并在同一提交内挂到 Agent。
 
 ### 调整证据与交付
 
