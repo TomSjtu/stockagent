@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from functools import lru_cache
-from typing import Protocol, TypeVar
 
 from stockagent.data.errors import MissingFiscalYearsError, NoDataError
 from stockagent.financials import (
@@ -13,26 +12,13 @@ from stockagent.financials import (
     ProfitabilityMetrics,
     ValuationMetrics,
 )
-from stockagent.fundamentals.cash_flow import compute_cash_flow_series
-from stockagent.fundamentals.financial_health import compute_financial_health_series
-from stockagent.fundamentals.growth import compute_growth_series
-from stockagent.fundamentals.inputs import (
-    build_cash_flow_inputs,
-    build_financial_health_inputs,
-    build_growth_inputs,
-    build_profitability_inputs,
-    build_valuation_input,
+from stockagent.fundamentals.annual import (
+    compute_cash_flow,
+    compute_financial_health,
+    compute_profitability,
 )
-from stockagent.fundamentals.profitability import compute_profitability_series
+from stockagent.fundamentals.growth import compute_growth_series
 from stockagent.fundamentals.valuation import compute_valuation
-
-MetricT = TypeVar("MetricT", bound="HasFiscalYear")
-
-
-class HasFiscalYear(Protocol):
-    """Describe values that can be indexed by their fiscal-year label."""
-
-    fiscal_year: int
 
 
 @dataclass(slots=True)
@@ -115,32 +101,30 @@ def analyze_profitability(
     records: tuple[FinancialRecord, ...],
 ) -> dict[int, ProfitabilityMetrics]:
     """Compute profitability metrics indexed by fiscal year."""
-    return _index_by_year(
-        compute_profitability_series(build_profitability_inputs(list(records)))
-    )
+    return {record.fiscal_year: compute_profitability(record) for record in records}
 
 
 def analyze_growth(records: tuple[FinancialRecord, ...]) -> dict[int, GrowthMetrics]:
     """Compute growth metrics indexed by fiscal year."""
-    return _index_by_year(compute_growth_series(build_growth_inputs(list(records))))
+    # 成长性跨年计算，须整窗传入；其余三类逐年独立
+    return {
+        metrics.fiscal_year: metrics
+        for metrics in compute_growth_series(list(records))
+    }
 
 
 def analyze_cash_flow(
     records: tuple[FinancialRecord, ...],
 ) -> dict[int, CashFlowMetrics]:
     """Compute cash-flow metrics indexed by fiscal year."""
-    return _index_by_year(
-        compute_cash_flow_series(build_cash_flow_inputs(list(records)))
-    )
+    return {record.fiscal_year: compute_cash_flow(record) for record in records}
 
 
 def analyze_financial_health(
     records: tuple[FinancialRecord, ...],
 ) -> dict[int, FinancialHealthMetrics]:
     """Compute financial-health metrics indexed by fiscal year."""
-    return _index_by_year(
-        compute_financial_health_series(build_financial_health_inputs(list(records)))
-    )
+    return {record.fiscal_year: compute_financial_health(record) for record in records}
 
 
 def analyze_valuation(
@@ -149,10 +133,9 @@ def analyze_valuation(
     market_cap: float | None = None,
 ) -> ValuationMetrics:
     """Compute trailing valuation metrics from the latest fiscal year."""
-    # 选择 records 中 fiscal_year 最大的记录，再连同市场输入投影为 ValuationInput
+    # 选择 records 中 fiscal_year 最大的记录，连同市场输入直接喂给估值公式
     latest = max(records, key=lambda record: record.fiscal_year)
-    valuation_input = build_valuation_input(latest, price, market_cap)
-    return compute_valuation(valuation_input)
+    return compute_valuation(latest, price, market_cap)
 
 
 def analyze_fundamentals(ticker: str, years: int = 3) -> FundamentalsAnalysis:
@@ -166,7 +149,3 @@ def analyze_fundamentals(ticker: str, years: int = 3) -> FundamentalsAnalysis:
         financial_health=analyze_financial_health(records),
         growth=analyze_growth(records),
     )
-
-
-def _index_by_year(metrics: list[MetricT]) -> dict[int, MetricT]:
-    return {item.fiscal_year: item for item in metrics}

@@ -131,8 +131,9 @@ src/stockagent/
   data/providers/        # EDGAR 数据提供方
   fundamentals/
     analysis.py          # EDGAR 取数、缓存、财年校验和指标编排
-    inputs.py            # 财务记录到公式输入的投影
-    *.py                 # 盈利、现金流、健康度、成长和估值纯函数
+    annual.py            # 逐年独立公式：盈利、现金流、健康度
+    growth.py            # 跨年公式：同比增长和 CAGR
+    valuation.py         # 需市场输入的估值公式
   financials/models.py   # 财务数据模型
   report/                # 报告生成和写入
   observability.py       # 日志和流程观测
