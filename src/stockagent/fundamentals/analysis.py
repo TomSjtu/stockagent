@@ -16,7 +16,6 @@ from stockagent.financials import (
 from stockagent.fundamentals.cash_flow import compute_cash_flow_series
 from stockagent.fundamentals.financial_health import compute_financial_health_series
 from stockagent.fundamentals.growth import compute_growth_series
-from stockagent.fundamentals.inputs import build_valuation_input
 from stockagent.fundamentals.profitability import compute_profitability_series
 from stockagent.fundamentals.valuation import compute_valuation
 
@@ -137,10 +136,9 @@ def analyze_valuation(
     market_cap: float | None = None,
 ) -> ValuationMetrics:
     """Compute trailing valuation metrics from the latest fiscal year."""
-    # 选择 records 中 fiscal_year 最大的记录，再连同市场输入投影为 ValuationInput
+    # 选择 records 中 fiscal_year 最大的记录，连同市场输入直接喂给估值公式
     latest = max(records, key=lambda record: record.fiscal_year)
-    valuation_input = build_valuation_input(latest, price, market_cap)
-    return compute_valuation(valuation_input)
+    return compute_valuation(latest, price, market_cap)
 
 
 def analyze_fundamentals(ticker: str, years: int = 3) -> FundamentalsAnalysis:

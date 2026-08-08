@@ -3,7 +3,6 @@ from __future__ import annotations
 import unittest
 
 from stockagent.financials import FinancialRecord, SecFilingReference
-from stockagent.fundamentals import build_valuation_input
 
 
 class FinancialModelTest(unittest.TestCase):
@@ -27,11 +26,10 @@ class FinancialModelTest(unittest.TestCase):
             filing=filing,
         )
 
-        valuation_input = build_valuation_input(record, price=100.0, market_cap=200.0)
         filing_payload = filing.model_dump(mode="json")
 
         self.assertIs(record.filing, filing)
-        self.assertEqual(valuation_input.revenue, 130.5)
+        self.assertEqual(record.revenue, 130.5)
         self.assertEqual(filing_payload["period_end"], "2026-01-25")
         self.assertEqual(filing_payload["filed_at"], "2026-02-20")
 
