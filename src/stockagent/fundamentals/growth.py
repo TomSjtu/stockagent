@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from stockagent.financials import FinancialRecord, GrowthMetrics
-from stockagent.fundamentals.cash_flow import free_cash_flow
+from stockagent.fundamentals.annual import free_cash_flow
 
 
 def _safe_growth(current: float | None, previous: float | None) -> float | None:
