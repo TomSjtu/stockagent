@@ -28,6 +28,30 @@ class SecFilingReference(BaseModel):
     url: str
 
 
+@dataclass(frozen=True, slots=True)
+class AnnualFinancialSnapshot:
+    """A cross-cutting projection of raw annual fields and derived metrics."""
+
+    # 财务数据所属的完整财年
+    fiscal_year: int
+    # 年度收入，沿用来源金额单位
+    revenue: float | None = None
+    # 归属于公司股东的年度净利润，沿用来源金额单位
+    net_income: float | None = None
+    # 年度经营活动产生的现金流，沿用来源金额单位
+    operating_cash_flow: float | None = None
+    # 正数表示的年度资本开支额，沿用来源金额单位
+    capex: float | None = None
+    # 年度经营现金流减资本开支额，沿用来源金额单位
+    free_cash_flow: float | None = None
+    # 毛利除以收入，以小数形式存储
+    gross_margin: float | None = None
+    # 净利润除以收入，以小数形式存储
+    net_margin: float | None = None
+    # 相对上一财年的收入增速，以小数形式存储
+    revenue_growth: float | None = None
+
+
 @dataclass(slots=True)
 class FinancialRecord:
     """Standardized annual financial data for one company fiscal year."""

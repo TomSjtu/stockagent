@@ -120,7 +120,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 
 估值路径先复用 `fundamentals.analysis.analyze_fundamentals(ticker, years)` 的年度记录，再把 LLM 声明的 `price`、`market_cap` 传给 `fundamentals.analysis.analyze_valuation(records, price, market_cap)`，只返回 PE/PB/PS。市场输入本身保留在 `ValuationAgentOutput`；其非空 `evidence_id` 必须指向该 Agent 已选择 evidence 的自洽性校验也归属于这个 LLM 侧模型，而不是 facts module。
 
-依赖方向为 `orchestrator.py -> facts.py -> fundamentals/analysis.py -> data/providers + financials + fundamentals/*`；facts module 另使用 `SecFilingReference` 和 `AnnualFinancialSnapshot` 作为报告侧投影类型。它不依赖 LangChain、不调用 LLM、不构建 LangGraph、不读写完整 `AnalysisState`，也不判断 narrative 的语义。orchestrator 保留 LangChain seam：它扫描明确的工具错误并校验 `structured_response`，但不再从消息中查找工具结果 content。
+依赖方向为 `orchestrator.py -> facts.py -> fundamentals/analysis.py -> data/providers + financials + fundamentals/*`；facts module 使用 `SecFilingReference` 收集 filing 元数据，并使用 `AnnualFinancialSnapshot` 作为原始年度字段与派生指标的横切投影。它不依赖 LangChain、不调用 LLM、不构建 LangGraph、不读写完整 `AnalysisState`，也不判断 narrative 的语义。orchestrator 保留 LangChain seam：它扫描明确的工具错误并校验 `structured_response`，但不再从消息中查找工具结果 content。
 
 这条 seam 没有修改给 LLM 使用的财务工具 JSON 格式、LangGraph 拓扑、报告 Markdown 格式、引用格式、CLI 或应用层 interface。当前实现也不包含报告质量验证、TTM、前瞻估值或新的估值工具合同；为什么确定性事实不应改回工具回流路径，见 [ADR 0001](adr/0001-deterministic-facts-at-source.md)。
 
@@ -228,8 +228,8 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 
 | 路径 | 作用 | 关系 |
 | --- | --- | --- |
-| `src/stockagent/financials/__init__.py` | 导出财务记录、指标 dataclass 和 `SecFilingReference`。 | 领域计算、确定性分析服务、provider 和测试的稳定导入面。 |
-| `src/stockagent/financials/models.py` | 定义 `FinancialRecord`、`SecFilingReference` 及 Profitability、CashFlow、FinancialHealth、Growth、Valuation 五类指标结果。 | 外部数据归一化的终点，也是纯计算的输入/输出。 |
+| `src/stockagent/financials/__init__.py` | 导出财务记录、年度快照、指标 dataclass 和 `SecFilingReference`。 | 领域计算、确定性分析服务、provider、编排层、报告层和测试的稳定导入面。 |
+| `src/stockagent/financials/models.py` | 定义 `FinancialRecord`、`AnnualFinancialSnapshot`、`SecFilingReference` 及 Profitability、CashFlow、FinancialHealth、Growth、Valuation 五类指标结果。 | 外部数据归一化的终点，也是跨层财务投影与纯计算的输入/输出。 |
 
 ### 4.8 `src/stockagent/fundamentals/`：确定性分析服务与指标计算
 
@@ -247,7 +247,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | --- | --- | --- |
 | `src/stockagent/report/__init__.py` | 报告包标记；当前不导出符号。 | 保持交付模块命名空间。 |
 | `src/stockagent/report/citations.py` | 将 `[industry-1]` 等内部标记按首次出现顺序渲染为全局 Markdown 脚注。 | 未知标记 warning 后移除；返回实际引用的证据 ID。 |
-| `src/stockagent/report/composer.py` | 从六个叙事片段、年度财务快照和 filing 编排固定章节的完整 Markdown。 | 由交付 module 调用；保留内部证据标记，供引用渲染器处理。 |
+| `src/stockagent/report/composer.py` | 从六个叙事片段、财务领域模型提供的年度快照和 filing 编排固定章节的完整 Markdown。 | 由交付 module 调用；保留内部证据标记，供引用渲染器处理。 |
 | `src/stockagent/report/delivery.py` | 定义图外唯一报告交付 interface 与 `GeneratedReport`，从最终 State 单次构造 Markdown 和 `EvidenceBundle`。 | 统一报告编排、证据聚合、年度 filing 投影和引用渲染；由 orchestrator 在 Graph 返回后调用。 |
 | `src/stockagent/report/evidence.py` | 定义 `EvidenceBundle` 与 `sources.json` 序列化契约。 | 记录选取证据、市场输入、实际引用 ID 和年度 filing。 |
 | `src/stockagent/report/writer.py` | 创建目标目录，以 UTF-8 写入 Markdown 和同 stem 的 `.sources.json`。 | 由 `app.py` 调用；接收已渲染内容和证据包，不理解 LLM 或 Graph 拓扑。 |

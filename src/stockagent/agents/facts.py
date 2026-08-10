@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import TypedDict as _TypedDict
 
-from stockagent.fundamentals import analysis as _analysis
-from stockagent.financials import SecFilingReference as _SecFilingReference
-from stockagent.report.composer import (
+from stockagent.financials import (
     AnnualFinancialSnapshot as _AnnualFinancialSnapshot,
 )
+from stockagent.financials import (
+    SecFilingReference as _SecFilingReference,
+)
+from stockagent.fundamentals import analysis as _analysis
 
 __all__ = ["build_fundamentals_facts", "build_valuation_facts"]
 

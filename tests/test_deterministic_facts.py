@@ -9,15 +9,15 @@ from stockagent.agents.facts import (
     build_fundamentals_facts,
     build_valuation_facts,
 )
-from stockagent.fundamentals.analysis import FundamentalsAnalysis
 from stockagent.financials import (
+    AnnualFinancialSnapshot,
     CashFlowMetrics,
     FinancialRecord,
     GrowthMetrics,
     ProfitabilityMetrics,
     SecFilingReference,
 )
-from stockagent.report.composer import AnnualFinancialSnapshot
+from stockagent.fundamentals.analysis import FundamentalsAnalysis
 
 
 class DeterministicFactsTest(unittest.TestCase):

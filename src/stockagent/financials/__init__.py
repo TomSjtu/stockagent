@@ -1,4 +1,5 @@
 from stockagent.financials.models import (
+    AnnualFinancialSnapshot,
     CashFlowMetrics,
     FinancialHealthMetrics,
     FinancialRecord,
@@ -9,6 +10,7 @@ from stockagent.financials.models import (
 )
 
 __all__ = [
+    "AnnualFinancialSnapshot",
     "CashFlowMetrics",
     "FinancialHealthMetrics",
     "FinancialRecord",

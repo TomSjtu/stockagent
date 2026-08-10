@@ -4,31 +4,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from stockagent.financials import SecFilingReference
-
-
-@dataclass(frozen=True, slots=True)
-class AnnualFinancialSnapshot:
-    """The annual facts rendered for one fiscal year in a research report."""
-
-    # 财务数据所属的完整财年
-    fiscal_year: int
-    # 年度收入，沿用来源金额单位
-    revenue: float | None = None
-    # 归属于公司股东的年度净利润，沿用来源金额单位
-    net_income: float | None = None
-    # 年度经营活动产生的现金流，沿用来源金额单位
-    operating_cash_flow: float | None = None
-    # 正数表示的年度资本开支额，沿用来源金额单位
-    capex: float | None = None
-    # 年度经营现金流减资本开支额，沿用来源金额单位
-    free_cash_flow: float | None = None
-    # 毛利除以收入，以小数形式存储
-    gross_margin: float | None = None
-    # 净利润除以收入，以小数形式存储
-    net_margin: float | None = None
-    # 相对上一财年的收入增速，以小数形式存储
-    revenue_growth: float | None = None
+from stockagent.financials import (
+    AnnualFinancialSnapshot as _AnnualFinancialSnapshot,
+)
+from stockagent.financials import (
+    SecFilingReference,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +33,7 @@ class ReportContent:
     # 汇总模型生成的投资建议 Markdown 正文
     investment_recommendation: str
     # 请求范围内按财年提供的确定性财务事实
-    annual_financials: Sequence[AnnualFinancialSnapshot]
+    annual_financials: Sequence[_AnnualFinancialSnapshot]
     # 用于生成年度 SEC 证据标记的 filing 元数据
     financial_filings: Sequence[SecFilingReference]
 
@@ -87,7 +68,7 @@ class ReportComposer:
 
     def _render_financial_snapshot(
         self,
-        annual_financials: Sequence[AnnualFinancialSnapshot],
+        annual_financials: Sequence[_AnnualFinancialSnapshot],
         financial_filings: Sequence[SecFilingReference],
     ) -> str:
         # 输入顺序不构成交付契约，始终按财年升序展示
@@ -148,7 +129,7 @@ class ReportComposer:
 
     @staticmethod
     def _column_header(
-        snapshot: AnnualFinancialSnapshot,
+        snapshot: _AnnualFinancialSnapshot,
         filings_by_year: dict[int, SecFilingReference],
     ) -> str:
         if snapshot.fiscal_year in filings_by_year:

@@ -3,9 +3,8 @@ from __future__ import annotations
 import unittest
 from datetime import date
 
-from stockagent.financials import SecFilingReference
+from stockagent.financials import AnnualFinancialSnapshot, SecFilingReference
 from stockagent.report.composer import (
-    AnnualFinancialSnapshot,
     ReportComposer,
     ReportContent,
 )

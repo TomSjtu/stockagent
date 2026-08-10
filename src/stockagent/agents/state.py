@@ -3,8 +3,7 @@ from typing import Literal, NotRequired, Self, TypedDict
 
 from pydantic import BaseModel, Field, model_validator
 
-from stockagent.financials import SecFilingReference
-from stockagent.report.composer import AnnualFinancialSnapshot
+from stockagent.financials import AnnualFinancialSnapshot, SecFilingReference
 
 
 class Evidence(BaseModel):

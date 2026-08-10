@@ -22,6 +22,7 @@ from stockagent.agents.state import (
     ValuationOutput,
 )
 from stockagent.financials import (
+    AnnualFinancialSnapshot,
     CashFlowMetrics,
     FinancialRecord,
     GrowthMetrics,
@@ -29,7 +30,6 @@ from stockagent.financials import (
     SecFilingReference,
 )
 from stockagent.fundamentals.analysis import FundamentalsAnalysis
-from stockagent.report.composer import AnnualFinancialSnapshot
 from stockagent.report.delivery import deliver_report
 
 

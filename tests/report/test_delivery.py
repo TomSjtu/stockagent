@@ -13,8 +13,7 @@ from stockagent.agents.state import (
     SynthesisOutput,
     ValuationOutput,
 )
-from stockagent.financials import SecFilingReference
-from stockagent.report.composer import AnnualFinancialSnapshot
+from stockagent.financials import AnnualFinancialSnapshot, SecFilingReference
 from stockagent.report.delivery import deliver_report
 
 

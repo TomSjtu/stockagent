@@ -28,7 +28,7 @@ from stockagent.agents.state import (
     ValuationAgentOutput,
     ValuationOutput,
 )
-from stockagent.report.composer import AnnualFinancialSnapshot
+from stockagent.financials import AnnualFinancialSnapshot
 
 
 class FakeAgent:
