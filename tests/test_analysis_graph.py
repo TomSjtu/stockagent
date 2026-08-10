@@ -514,10 +514,17 @@ class FakeSynthesisModel:
     def __init__(self, response: dict[str, str]) -> None:
         self.response = response
         self.output_type: type | None = None
+        self.structured_output_method: str | None = None
         self.messages: list[dict[str, str]] = []
 
-    def with_structured_output(self, output_type: type) -> FakeSynthesisModel:
+    def with_structured_output(
+        self,
+        output_type: type,
+        *,
+        method: str = "json_schema",
+    ) -> FakeSynthesisModel:
         self.output_type = output_type
+        self.structured_output_method = method
         return self
 
     def invoke(self, messages: list[dict[str, str]]) -> dict[str, str]:

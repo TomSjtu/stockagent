@@ -70,9 +70,16 @@ class FakeModel:
         self.result = result
         self.payload: object | None = None
         self.output_type: type | None = None
+        self.structured_output_method: str | None = None
 
-    def with_structured_output(self, output_type: type) -> FakeModel:
+    def with_structured_output(
+        self,
+        output_type: type,
+        *,
+        method: str = "json_schema",
+    ) -> FakeModel:
         self.output_type = output_type
+        self.structured_output_method = method
         return self
 
     def invoke(self, payload: object) -> object:
@@ -757,6 +764,7 @@ class AnalysisNodesTest(unittest.TestCase):
             },
         )
         self.assertIsNotNone(model.output_type)
+        self.assertEqual(model.structured_output_method, "function_calling")
 
     def test_synthesize_node_only_suppresses_known_pydantic_serializer_warning(
         self,

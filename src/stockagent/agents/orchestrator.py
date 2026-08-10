@@ -263,7 +263,12 @@ def _build_synthesize_node(
     progress_reporter: ProgressReporter,
 ) -> StateNode:
     """Build a node that generates summary and recommendation fragments."""
-    structured_model = model.with_structured_output(SynthesisOutput)
+    # OpenAI-compatible endpoints may ignore response_format=json_schema and
+    # return plain text. Tool calling is already required by the analysis agents.
+    structured_model = model.with_structured_output(
+        SynthesisOutput,
+        method="function_calling",
+    )
     model_stream = _build_structured_model_stream(structured_model)
 
     def synthesize(state: AnalysisState) -> dict[str, SynthesisOutput]:
