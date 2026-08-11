@@ -5,6 +5,7 @@ from functools import lru_cache
 
 from stockagent.data.errors import MissingFiscalYearsError, NoDataError
 from stockagent.financials import (
+    AnnualFundamentals,
     CashFlowMetrics,
     FinancialHealthMetrics,
     FinancialRecord,
@@ -37,6 +38,8 @@ class FundamentalsAnalysis:
     financial_health: dict[int, FinancialHealthMetrics]
     # 以财年为键的同比增速和相对窗口首年的 CAGR
     growth: dict[int, GrowthMetrics]
+    # 同一财年事实与指标已对齐、按财年升序排列的不可变窗口
+    annual_fundamentals: tuple[AnnualFundamentals, ...] = ()
 
 
 def fetch_financials(ticker: str, years: int = 3) -> tuple[FinancialRecord, ...]:
@@ -141,11 +144,26 @@ def analyze_valuation(
 def analyze_fundamentals(ticker: str, years: int = 3) -> FundamentalsAnalysis:
     """Fetch records and compute the complete deterministic fundamentals analysis."""
     records = fetch_financials(ticker, years)
+    profitability = analyze_profitability(records)
+    cash_flow = analyze_cash_flow(records)
+    financial_health = analyze_financial_health(records)
+    growth = analyze_growth(records)
+    annual_fundamentals = tuple(
+        AnnualFundamentals(
+            record=record,
+            profitability=profitability[record.fiscal_year],
+            cash_flow=cash_flow[record.fiscal_year],
+            financial_health=financial_health[record.fiscal_year],
+            growth=growth[record.fiscal_year],
+        )
+        for record in records
+    )
     return FundamentalsAnalysis(
         ticker=ticker.upper(),
         records=list(records),
-        profitability=analyze_profitability(records),
-        cash_flow=analyze_cash_flow(records),
-        financial_health=analyze_financial_health(records),
-        growth=analyze_growth(records),
+        profitability=profitability,
+        cash_flow=cash_flow,
+        financial_health=financial_health,
+        growth=growth,
+        annual_fundamentals=annual_fundamentals,
     )

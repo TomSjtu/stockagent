@@ -185,6 +185,33 @@ class GrowthMetrics:
     free_cash_flow_cagr: float | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class AnnualFundamentals:
+    """Standardized facts and deterministic metrics for one fiscal year."""
+
+    record: FinancialRecord
+    profitability: ProfitabilityMetrics
+    cash_flow: CashFlowMetrics
+    financial_health: FinancialHealthMetrics
+    growth: GrowthMetrics
+
+    def __post_init__(self) -> None:
+        fiscal_years = {
+            self.record.fiscal_year,
+            self.profitability.fiscal_year,
+            self.cash_flow.fiscal_year,
+            self.financial_health.fiscal_year,
+            self.growth.fiscal_year,
+        }
+        if len(fiscal_years) != 1:
+            raise ValueError("annual fundamentals fiscal years must match")
+
+    @property
+    def fiscal_year(self) -> int:
+        """Return the shared fiscal year of every aggregated part."""
+        return self.record.fiscal_year
+
+
 @dataclass(slots=True)
 class ValuationMetrics:
     """Computed valuation ratios for one fiscal year."""

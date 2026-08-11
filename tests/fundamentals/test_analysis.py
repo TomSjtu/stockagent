@@ -3,12 +3,71 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from stockagent.fundamentals import analysis
 from stockagent.data.errors import MissingFiscalYearsError, NoDataError
 from stockagent.financials import FinancialRecord
+from stockagent.fundamentals import analysis
 
 
 class AnalysisTest(unittest.TestCase):
+    def test_analyze_fundamentals_returns_ascending_immutable_annual_window(
+        self,
+    ) -> None:
+        records = [
+            FinancialRecord(
+                ticker="annualwindow",
+                company_name="Annual Window Inc.",
+                fiscal_year=2024,
+                revenue=120.0,
+                net_income=24.0,
+                operating_cash_flow=36.0,
+                capex=6.0,
+            ),
+            FinancialRecord(
+                ticker="annualwindow",
+                company_name="Annual Window Inc.",
+                fiscal_year=2023,
+                revenue=100.0,
+                net_income=20.0,
+                operating_cash_flow=30.0,
+                capex=5.0,
+            ),
+        ]
+
+        with (
+            patch("edgar.set_identity"),
+            patch("stockagent.data.providers.EdgarFinancialsProvider") as provider_type,
+        ):
+            provider_type.return_value.fetch_annual_records.return_value = records
+
+            result = analysis.analyze_fundamentals("annualwindow", 2)
+
+        self.assertEqual(result.ticker, "ANNUALWINDOW")
+        self.assertIsInstance(result.annual_fundamentals, tuple)
+        self.assertEqual(
+            [item.fiscal_year for item in result.annual_fundamentals],
+            [2023, 2024],
+        )
+        for item in result.annual_fundamentals:
+            fiscal_year = item.fiscal_year
+            self.assertEqual(
+                {
+                    item.record.fiscal_year,
+                    item.profitability.fiscal_year,
+                    item.cash_flow.fiscal_year,
+                    item.financial_health.fiscal_year,
+                    item.growth.fiscal_year,
+                },
+                {fiscal_year},
+            )
+            self.assertIs(result.profitability[fiscal_year], item.profitability)
+            self.assertIs(result.cash_flow[fiscal_year], item.cash_flow)
+            self.assertIs(
+                result.financial_health[fiscal_year],
+                item.financial_health,
+            )
+            self.assertIs(result.growth[fiscal_year], item.growth)
+        self.assertEqual(result.records, [item.record for item in result.annual_fundamentals])
+
     def test_fetch_financials_rejects_invalid_years(self) -> None:
         for years in (0, -1, 1.5, "3", True):
             with self.subTest(years=years):
