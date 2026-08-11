@@ -79,7 +79,7 @@ def build_analysis_graph(nodes: AnalysisNodes):
     graph.add_node("risk", nodes.risk)
     graph.add_node("synthesize", nodes.synthesize)
 
-    # 从 START 并行运行行业和基本面节点，再依次写入估值、风险和最终报告
+    # 从 START 并行运行行业和基本面节点，再依次写入估值、风险和汇总叙事
     graph.add_edge(START, "industry")
     graph.add_edge(START, "fundamentals")
     graph.add_edge(["industry", "fundamentals"], "valuation")

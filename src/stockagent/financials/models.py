@@ -171,11 +171,11 @@ class GrowthMetrics:
 
     # 与输入记录一致的财年标签
     fiscal_year: int
-    # 相对上一财年的收入增速；增速与 CAGR 均为小数，首年、非连续期或不满足公式前提时为 None
+    # 相对输入序列中上一条记录的收入增速；增速与 CAGR 均为小数，首条记录或不满足公式前提时为 None
     revenue_growth: float | None = None
-    # 相对上一财年的净利润增速
+    # 相对输入序列中上一条记录的净利润增速
     net_income_growth: float | None = None
-    # 相对上一财年的自由现金流增速
+    # 相对输入序列中上一条记录的自由现金流增速
     free_cash_flow_growth: float | None = None
     # 相对窗口首年的收入复合年增长率
     revenue_cagr: float | None = None
@@ -193,7 +193,7 @@ class ValuationMetrics:
     fiscal_year: int
     # 市场输入保留原始数值与来源口径；None 表示工具没有得到可用输入
     stock_price: float | None = None
-    # 与股价同一市场时点的总市值
+    # 调用方声明采用的总市值；当前模型不校验它是否与股价来自同一市场时点
     market_cap: float | None = None
     # 优先使用价格/稀释 EPS，否则使用市值/净利润的市盈率
     pe_ratio: float | None = None

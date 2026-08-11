@@ -110,10 +110,10 @@ stockagent.cli:main
 默认分析流程中：
 
 - `industry_analyst` 使用 `web_search` 做行业和近期信息收集。
-- `fundamentals_analyst` 使用 EDGAR 财务数据和确定性指标工具做基本面分析，并保留年度 10-K 元数据。
+- `fundamentals_analyst` 使用 EDGAR 财务数据和确定性指标工具生成基本面叙事；编排层随后通过 facts interface 补入年度财务快照和 10-K 元数据。
 - `valuation_analyst` 会结合 `web_search` 声明报告采用的市场输入，并调用 `compute_valuation_metrics()` 辅助叙事；编排层使用其结构化输出中的价格和市值直接计算 trailing PE / PB / PS，确保比率与 `sources.json` 的市场输入一致。
 - `risk_analyst` 会综合前序结构化分析并补充近期公司风险信息。
-- 汇总阶段保留内部来源标记并渲染为脚注；未知标记仅记录 warning 后移除，不会让整份报告失败。
+- 汇总节点生成摘要与投资建议并保留内部来源标记；Graph 返回后，报告交付层将有效标记渲染为脚注。符合内部 ID 格式但没有对应证据的标记只记录 warning 后移除，不会让整份报告失败。
 
 ## 项目结构
 
@@ -152,4 +152,4 @@ uv run pytest -q
 - 当前仅支持 `openai:` provider 的模型构建。
 - 网页引用是尽力而为：未标记来源的 LLM 叙事仍可能出现；已选取且被引用的来源会在 Markdown 和 `sources.json` 中保持一致。
 - 估值链路已经有 PE / PB / PS 的确定性计算，但市场输入仍来自非结构化搜索结果；价格、市值、币种和日期可能缺失或并非同一时点。
-- 财务数据仅覆盖最近可得年度 10-K，未纳入最新 10-Q 与 TTM；P0 不提供 DCF、EV/EBITDA、可比公司表或确定性财务表渲染。
+- 财务数据仅覆盖最近可得年度 10-K，未纳入最新 10-Q 与 TTM；当前会确定性渲染年度财务快照表，但不提供 DCF、EV/EBITDA、可比公司表或确定性估值表。

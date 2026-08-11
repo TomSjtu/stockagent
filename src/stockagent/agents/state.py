@@ -76,9 +76,9 @@ class FundamentalsAgentOutput(BaseModel):
 class FundamentalsOutput(FundamentalsAgentOutput):
     """Fundamentals state enriched with deterministic financial facts."""
 
-    # 从 get_fundamentals_analysis 工具 records 提取的年度 SEC filing 列表
+    # 由编排层通过确定性 facts interface 投影的年度 SEC filing 列表
     financial_filings: list[SecFilingReference] = Field(default_factory=list)
-    # 从同一确定性工具结果提取的年度财务快照，供报告编排器直接渲染
+    # 由编排层通过确定性 facts interface 投影的年度财务快照，供报告编排器直接渲染
     annual_financials: list[AnnualFinancialSnapshot] = Field(default_factory=list)
 
 

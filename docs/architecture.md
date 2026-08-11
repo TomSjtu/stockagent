@@ -96,13 +96,13 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 
 ### 3.1 确定性与生成式职责分离
 
-- EDGAR 记录归一化在 `data/` 完成；取数、缓存、窗口校验和指标编排在 `fundamentals/analysis.py` 完成；财务公式在 `financials/` 与 `fundamentals/{annual,growth,valuation}.py` 中完成，直接读取 `FinancialRecord`，均可不调用 LLM 测试。
+- EDGAR 记录归一化在 `data/` 完成；财务领域模型在 `financials/` 定义；取数、缓存、窗口校验和指标编排在 `fundamentals/analysis.py` 完成；财务公式在 `fundamentals/{annual,growth,valuation}.py` 中完成，直接读取 `FinancialRecord`，均可不调用 LLM 测试。
 - LLM 负责搜索策略、叙事说明、来源选择、同行对比、风险判断，以及摘要与投资建议两个叙事片段；它只能为实际采用的外部事实返回结构化证据和内部标记。完整报告由确定性的报告交付层编排。
 - 基本面与估值都将 LLM schema 和 State 模型分开：`FundamentalsAgentOutput` 只含 `narrative`、`concerns`，`ValuationAgentOutput` 只含估值叙事、所选 evidence 与完整 `market_inputs`；对应的 State 模型再增加确定性字段。
 - `FundamentalsOutput.annual_financials` 和 `financial_filings` 的最终权威来源是编排层按本次 `ticker`、`years` 直接调用的确定性财务分析 module；基本面工具结果只服务于 Agent 叙事，不回流 State。
 - `ValuationOutput` 的 PE/PB/PS 由确定性财务分析 module 使用 `ValuationAgentOutput.market_inputs` 中声明的 `price`、`market_cap` 计算。价格、市值、币种、时点和证据 ID 均以 LLM 的结构化声明为准；估值工具结果不再是报告状态的权威来源。
 - 进度事件是纯观测数据：它们不写入 `AnalysisState`，不参与 facts interface 的输入或输出，也不进入任何确定性事实取值路径。因此 [ADR 0001](adr/0001-deterministic-facts-at-source.md) 的边界保持不变，无需新增 ADR。
-- 引用渲染是确定性的：有效内部标记按首次出现顺序成为全局脚注；未知标记记录 warning 后移除；未引用 evidence 只保留在 `sources.json`。
+- 引用渲染是确定性的：有效内部标记按首次出现顺序成为全局脚注；符合内部 ID 格式但没有对应证据的标记记录 warning 后移除；未引用 evidence 只保留在 `sources.json`。
 - 报告交付也是确定性的：`deliver_report()` 从最终 State 一次构造 Markdown 与 `EvidenceBundle`，证据聚合和年度 filing 投影只有这一条路径。
 
 ### 3.2 确定性事实处理 seam
@@ -176,7 +176,6 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | `docs/architecture.md` | 本文：模块边界、执行流、契约、目录和测试索引。 |
 | `docs/adr/0001-deterministic-facts-at-source.md` | 记录确定性事实由编排层直接取得、不经 LLM 工具边界回流的决策与理由。 |
 | `docs/fundamentals.md` | 解释利润表、现金流量表、资产负债表和基本面分析概念，属于领域知识说明而非运行时模块。 |
-| `docs/specs/0001-streaming-cli-progress.md` | 记录 Agent 内部流式进度、终端呈现、控制流约束与测试决策。 |
 
 ### 4.3 `src/stockagent/`：顶层应用模块
 
@@ -246,7 +245,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | 路径 | 作用 | 关系 |
 | --- | --- | --- |
 | `src/stockagent/report/__init__.py` | 报告包标记；当前不导出符号。 | 保持交付模块命名空间。 |
-| `src/stockagent/report/citations.py` | 将 `[industry-1]` 等内部标记按首次出现顺序渲染为全局 Markdown 脚注。 | 未知标记 warning 后移除；返回实际引用的证据 ID。 |
+| `src/stockagent/report/citations.py` | 将 `[industry-1]` 等内部标记按首次出现顺序渲染为全局 Markdown 脚注。 | 符合内部 ID 格式但没有对应证据的标记 warning 后移除；返回实际引用的证据 ID。 |
 | `src/stockagent/report/composer.py` | 从六个叙事片段、财务领域模型提供的年度快照和 filing 编排固定章节的完整 Markdown。 | 由交付 module 调用；保留内部证据标记，供引用渲染器处理。 |
 | `src/stockagent/report/delivery.py` | 定义图外唯一报告交付 interface 与 `GeneratedReport`，从最终 State 单次构造 Markdown 和 `EvidenceBundle`。 | 统一报告编排、证据聚合、年度 filing 投影和引用渲染；由 orchestrator 在 Graph 返回后调用。 |
 | `src/stockagent/report/evidence.py` | 定义 `EvidenceBundle` 与 `sources.json` 序列化契约。 | 记录选取证据、市场输入、实际引用 ID 和年度 filing。 |
@@ -260,10 +259,10 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | --- | --- |
 | `tests/test_cli.py` | 参数默认值、输出目录/日志级别、非法年份、入口错误处理、stdout 行为和覆盖完整工作流的单一实时上报器。 |
 | `tests/test_app.py` | 应用层连接配置、进度上报器、Agent 和报告写入器。 |
-| `tests/test_config.py` | 必需环境变量、默认模型与 OpenAI 环境变量映射。 |
+| `tests/test_config.py` | 必需环境变量、默认模型、可选 EDGAR identity 与应用配置组装。 |
 | `tests/test_observability.py` | Rich 日志处理器、时间精度、第三方日志等级及非终端输出无控制字符。 |
 | `tests/fundamentals/test_analysis.py` | ticker/年份校验、连续财年窗口、缓存、无数据错误和最新财年估值选择。 |
-| `tests/test_financial_models.py` | 财务记录、filing 引用和指标 dataclass 的字段与默认值契约。 |
+| `tests/test_financial_models.py` | `FinancialRecord` 接收 filing 引用及 filing 日期序列化。 |
 | `tests/test_financial_tools.py` | 财务工具 JSON 序列化、估值市场输入与缺失原因。 |
 | `tests/test_search_tool.py` | Tavily 调用参数与裁剪后的搜索接口。 |
 | `tests/test_agent_builders.py` | 四个 Agent builder 的工具集合、工具面一致性不变量、prompt 和 `ToolStrategy` 输出合同。 |
@@ -335,8 +334,6 @@ tests -> every production layer, but production code never imports tests
 | `.pytest_cache/`、`.ruff_cache/`、各级 `__pycache__/` | 工具/解释器缓存，已忽略。 | 可删除再生，不承载业务状态。 |
 | `.codegraph/` | 本地代码索引，未跟踪。 | 开发辅助索引，不参与程序运行。 |
 | `output/` | 报告写入器创建的已忽略目录。 | 仅保存运行产物；文件名由 ticker 和日期决定。 |
-| `templates/` | 当前为空且未被 Git 跟踪。 | 没有运行时加载点，不是当前报告渲染架构的一部分。 |
-| `src/stockagent/integrations/` | 当前为空且未被 Git 跟踪。 | 不是 Python 包，也没有被生产代码导入。 |
 
 ## 7. 维护与扩展指南
 
