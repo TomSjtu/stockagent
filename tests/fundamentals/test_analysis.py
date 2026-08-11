@@ -4,7 +4,14 @@ import unittest
 from unittest.mock import patch
 
 from stockagent.data.errors import MissingFiscalYearsError, NoDataError
-from stockagent.financials import FinancialRecord
+from stockagent.financials import (
+    AnnualFundamentals,
+    CashFlowMetrics,
+    FinancialHealthMetrics,
+    FinancialRecord,
+    GrowthMetrics,
+    ProfitabilityMetrics,
+)
 from stockagent.fundamentals import analysis
 
 
@@ -199,7 +206,26 @@ class AnalysisTest(unittest.TestCase):
             ),
         )
 
-        metrics = analysis.analyze_valuation(records, price=40.0, market_cap=200.0)
+        annual_fundamentals = tuple(
+            AnnualFundamentals(
+                record=record,
+                profitability=ProfitabilityMetrics(
+                    fiscal_year=record.fiscal_year
+                ),
+                cash_flow=CashFlowMetrics(fiscal_year=record.fiscal_year),
+                financial_health=FinancialHealthMetrics(
+                    fiscal_year=record.fiscal_year
+                ),
+                growth=GrowthMetrics(fiscal_year=record.fiscal_year),
+            )
+            for record in records
+        )
+
+        metrics = analysis.analyze_valuation(
+            annual_fundamentals,
+            price=40.0,
+            market_cap=200.0,
+        )
 
         self.assertEqual(metrics.fiscal_year, 2024)
         self.assertEqual(metrics.pe_ratio, 20.0)

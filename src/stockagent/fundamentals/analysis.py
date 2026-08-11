@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 
 from stockagent.data.errors import MissingFiscalYearsError, NoDataError
@@ -29,15 +29,15 @@ class FundamentalsAnalysis:
     # 规范化为大写的请求股票代码
     ticker: str
     # 连续财年窗口内、按财年升序排列的标准化原始记录
-    records: list[FinancialRecord]
+    records: list[FinancialRecord] = field(default_factory=list)
     # 以财年为键的确定性指标，便于工具边界序列化和查询
-    profitability: dict[int, ProfitabilityMetrics]
+    profitability: dict[int, ProfitabilityMetrics] = field(default_factory=dict)
     # 以财年为键的自由现金流指标
-    cash_flow: dict[int, CashFlowMetrics]
+    cash_flow: dict[int, CashFlowMetrics] = field(default_factory=dict)
     # 以财年为键的杠杆、流动性和现金偿债指标
-    financial_health: dict[int, FinancialHealthMetrics]
+    financial_health: dict[int, FinancialHealthMetrics] = field(default_factory=dict)
     # 以财年为键的同比增速和相对窗口首年的 CAGR
-    growth: dict[int, GrowthMetrics]
+    growth: dict[int, GrowthMetrics] = field(default_factory=dict)
     # 同一财年事实与指标已对齐、按财年升序排列的不可变窗口
     annual_fundamentals: tuple[AnnualFundamentals, ...] = ()
 
@@ -131,14 +131,16 @@ def analyze_financial_health(
 
 
 def analyze_valuation(
-    records: tuple[FinancialRecord, ...],
+    annual_fundamentals: tuple[AnnualFundamentals, ...],
     price: float | None = None,
     market_cap: float | None = None,
 ) -> ValuationMetrics:
     """Compute trailing valuation metrics from the latest fiscal year."""
-    # 选择 records 中 fiscal_year 最大的记录，连同市场输入直接喂给估值公式
-    latest = max(records, key=lambda record: record.fiscal_year)
-    return compute_valuation(latest, price, market_cap)
+    latest = max(
+        annual_fundamentals,
+        key=lambda fundamentals: fundamentals.fiscal_year,
+    )
+    return compute_valuation(latest.record, price, market_cap)
 
 
 def analyze_fundamentals(ticker: str, years: int = 3) -> FundamentalsAnalysis:
