@@ -11,7 +11,9 @@ from stockagent.agents.facts import (
 )
 from stockagent.financials import (
     AnnualFinancialSnapshot,
+    AnnualFundamentals,
     CashFlowMetrics,
+    FinancialHealthMetrics,
     FinancialRecord,
     GrowthMetrics,
     ProfitabilityMetrics,
@@ -32,51 +34,64 @@ class DeterministicFactsTest(unittest.TestCase):
     ) -> None:
         filing_2023 = self._filing(2023)
         filing_2024 = self._filing(2024)
+        record_2023 = FinancialRecord(
+            ticker="AAPL",
+            company_name="Apple Inc.",
+            fiscal_year=2023,
+            revenue=800.0,
+            net_income=120.0,
+            operating_cash_flow=240.0,
+            capex=40.0,
+            filing=filing_2023,
+        )
+        record_2024 = FinancialRecord(
+            ticker="AAPL",
+            company_name="Apple Inc.",
+            fiscal_year=2024,
+            revenue=1_000.0,
+            net_income=200.0,
+            operating_cash_flow=300.0,
+            capex=50.0,
+            filing=filing_2024,
+        )
         analysis = FundamentalsAnalysis(
             ticker="AAPL",
-            records=[
-                FinancialRecord(
-                    ticker="AAPL",
-                    company_name="Apple Inc.",
-                    fiscal_year=2024,
-                    revenue=1_000.0,
-                    net_income=200.0,
-                    operating_cash_flow=300.0,
-                    capex=50.0,
-                    filing=filing_2024,
+            annual_fundamentals=(
+                AnnualFundamentals(
+                    record=record_2023,
+                    profitability=ProfitabilityMetrics(
+                        fiscal_year=2023,
+                        gross_margin=0.5,
+                        net_margin=0.15,
+                    ),
+                    cash_flow=CashFlowMetrics(
+                        fiscal_year=2023,
+                        free_cash_flow=200.0,
+                    ),
+                    financial_health=FinancialHealthMetrics(fiscal_year=2023),
+                    growth=GrowthMetrics(
+                        fiscal_year=2023,
+                        revenue_growth=None,
+                    ),
                 ),
-                FinancialRecord(
-                    ticker="AAPL",
-                    company_name="Apple Inc.",
-                    fiscal_year=2023,
-                    revenue=800.0,
-                    net_income=120.0,
-                    operating_cash_flow=240.0,
-                    capex=40.0,
-                    filing=filing_2023,
+                AnnualFundamentals(
+                    record=record_2024,
+                    profitability=ProfitabilityMetrics(
+                        fiscal_year=2024,
+                        gross_margin=0.6,
+                        net_margin=0.2,
+                    ),
+                    cash_flow=CashFlowMetrics(
+                        fiscal_year=2024,
+                        free_cash_flow=250.0,
+                    ),
+                    financial_health=FinancialHealthMetrics(fiscal_year=2024),
+                    growth=GrowthMetrics(
+                        fiscal_year=2024,
+                        revenue_growth=0.25,
+                    ),
                 ),
-            ],
-            profitability={
-                2024: ProfitabilityMetrics(
-                    fiscal_year=2024,
-                    gross_margin=0.6,
-                    net_margin=0.2,
-                ),
-                2023: ProfitabilityMetrics(
-                    fiscal_year=2023,
-                    gross_margin=0.5,
-                    net_margin=0.15,
-                ),
-            },
-            cash_flow={
-                2024: CashFlowMetrics(fiscal_year=2024, free_cash_flow=250.0),
-                2023: CashFlowMetrics(fiscal_year=2023, free_cash_flow=200.0),
-            },
-            financial_health={},
-            growth={
-                2024: GrowthMetrics(fiscal_year=2024, revenue_growth=0.25),
-                2023: GrowthMetrics(fiscal_year=2023, revenue_growth=None),
-            },
+            ),
         )
 
         with patch("stockagent.agents.facts._analysis.analyze_fundamentals", return_value=analysis) as analyze:
@@ -207,15 +222,21 @@ class DeterministicFactsTest(unittest.TestCase):
         record: FinancialRecord,
     ) -> FundamentalsAnalysis:
         fiscal_year = record.fiscal_year
+        profitability = ProfitabilityMetrics(fiscal_year=fiscal_year)
+        cash_flow = CashFlowMetrics(fiscal_year=fiscal_year)
+        financial_health = FinancialHealthMetrics(fiscal_year=fiscal_year)
+        growth = GrowthMetrics(fiscal_year=fiscal_year)
         return FundamentalsAnalysis(
             ticker=record.ticker,
-            records=[record],
-            profitability={
-                fiscal_year: ProfitabilityMetrics(fiscal_year=fiscal_year)
-            },
-            cash_flow={fiscal_year: CashFlowMetrics(fiscal_year=fiscal_year)},
-            financial_health={},
-            growth={fiscal_year: GrowthMetrics(fiscal_year=fiscal_year)},
+            annual_fundamentals=(
+                AnnualFundamentals(
+                    record=record,
+                    profitability=profitability,
+                    cash_flow=cash_flow,
+                    financial_health=financial_health,
+                    growth=growth,
+                ),
+            ),
         )
 
     @staticmethod

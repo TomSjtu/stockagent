@@ -23,7 +23,9 @@ from stockagent.agents.state import (
 )
 from stockagent.financials import (
     AnnualFinancialSnapshot,
+    AnnualFundamentals,
     CashFlowMetrics,
+    FinancialHealthMetrics,
     FinancialRecord,
     GrowthMetrics,
     ProfitabilityMetrics,
@@ -204,61 +206,68 @@ class ReportCompositionFlowTest(unittest.TestCase):
     def test_real_nodes_project_financials_through_graph_to_report(self) -> None:
         filing_2023 = self._filing(2023)
         filing_2024 = self._filing(2024)
+        record_2023 = FinancialRecord(
+            "AAPL",
+            "Apple Inc.",
+            2023,
+            revenue=1_250_000_000.0,
+            net_income=100_000_000.0,
+            operating_cash_flow=250_000_000.0,
+            capex=50_000_000.0,
+            eps_diluted=1.0,
+            shareholders_equity=400_000_000.0,
+            filing=filing_2023,
+        )
+        record_2024 = FinancialRecord(
+            "AAPL",
+            "Apple Inc.",
+            2024,
+            revenue=2_000_000_000.0,
+            net_income=180_000_000.0,
+            operating_cash_flow=400_000_000.0,
+            capex=80_000_000.0,
+            eps_diluted=2.0,
+            shareholders_equity=500_000_000.0,
+            filing=filing_2024,
+        )
         analysis = FundamentalsAnalysis(
             ticker="AAPL",
-            records=[
-                FinancialRecord(
-                    "AAPL",
-                    "Apple Inc.",
-                    2024,
-                    revenue=2_000_000_000.0,
-                    net_income=180_000_000.0,
-                    operating_cash_flow=400_000_000.0,
-                    capex=80_000_000.0,
-                    eps_diluted=2.0,
-                    shareholders_equity=500_000_000.0,
-                    filing=filing_2024,
+            annual_fundamentals=(
+                AnnualFundamentals(
+                    record=record_2023,
+                    profitability=ProfitabilityMetrics(
+                        fiscal_year=2023,
+                        gross_margin=0.4,
+                        net_margin=0.08,
+                    ),
+                    cash_flow=CashFlowMetrics(
+                        fiscal_year=2023,
+                        free_cash_flow=200_000_000.0,
+                    ),
+                    financial_health=FinancialHealthMetrics(fiscal_year=2023),
+                    growth=GrowthMetrics(
+                        fiscal_year=2023,
+                        revenue_growth=None,
+                    ),
                 ),
-                FinancialRecord(
-                    "AAPL",
-                    "Apple Inc.",
-                    2023,
-                    revenue=1_250_000_000.0,
-                    net_income=100_000_000.0,
-                    operating_cash_flow=250_000_000.0,
-                    capex=50_000_000.0,
-                    eps_diluted=1.0,
-                    shareholders_equity=400_000_000.0,
-                    filing=filing_2023,
+                AnnualFundamentals(
+                    record=record_2024,
+                    profitability=ProfitabilityMetrics(
+                        fiscal_year=2024,
+                        gross_margin=0.45,
+                        net_margin=0.09,
+                    ),
+                    cash_flow=CashFlowMetrics(
+                        fiscal_year=2024,
+                        free_cash_flow=320_000_000.0,
+                    ),
+                    financial_health=FinancialHealthMetrics(fiscal_year=2024),
+                    growth=GrowthMetrics(
+                        fiscal_year=2024,
+                        revenue_growth=0.6,
+                    ),
                 ),
-            ],
-            profitability={
-                2023: ProfitabilityMetrics(
-                    fiscal_year=2023,
-                    gross_margin=0.4,
-                    net_margin=0.08,
-                ),
-                2024: ProfitabilityMetrics(
-                    fiscal_year=2024,
-                    gross_margin=0.45,
-                    net_margin=0.09,
-                ),
-            },
-            cash_flow={
-                2023: CashFlowMetrics(
-                    fiscal_year=2023,
-                    free_cash_flow=200_000_000.0,
-                ),
-                2024: CashFlowMetrics(
-                    fiscal_year=2024,
-                    free_cash_flow=320_000_000.0,
-                ),
-            },
-            financial_health={},
-            growth={
-                2023: GrowthMetrics(fiscal_year=2023, revenue_growth=None),
-                2024: GrowthMetrics(fiscal_year=2024, revenue_growth=0.6),
-            },
+            ),
         )
         agent_results = {
             "industry": {

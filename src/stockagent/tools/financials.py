@@ -16,11 +16,15 @@ def compute_valuation_metrics(
     years: int = 3,
 ) -> str:
     """Compute trailing PE/PB/PS from market inputs and latest financials as JSON."""
-    records = analysis.fetch_financials(ticker, years)
-    metrics = analysis.analyze_valuation(records, price, market_cap)
+    result = analysis.analyze_fundamentals(ticker, years)
+    metrics = analysis.analyze_valuation(
+        result.annual_fundamentals,
+        price,
+        market_cap,
+    )
     return _to_json(
         {
-            "ticker": ticker.upper(),
+            "ticker": result.ticker,
             "years": years,
             "fiscal_year": metrics.fiscal_year,
             "valuation": metrics,
@@ -36,7 +40,33 @@ def compute_valuation_metrics(
 def get_fundamentals_analysis(ticker: str, years: int = 3) -> str:
     """Fetch records and compute all deterministic financial metrics."""
     result = analysis.analyze_fundamentals(ticker, years)
-    return _to_json(result)
+    return _to_json(_fundamentals_tool_payload(result))
+
+
+def _fundamentals_tool_payload(
+    result: analysis.FundamentalsAnalysis,
+) -> dict[str, Any]:
+    """Adapt annual fundamentals to the established LLM tool contract."""
+    return {
+        "ticker": result.ticker,
+        "records": [item.record for item in result.annual_fundamentals],
+        "profitability": {
+            item.fiscal_year: item.profitability
+            for item in result.annual_fundamentals
+        },
+        "cash_flow": {
+            item.fiscal_year: item.cash_flow
+            for item in result.annual_fundamentals
+        },
+        "financial_health": {
+            item.fiscal_year: item.financial_health
+            for item in result.annual_fundamentals
+        },
+        "growth": {
+            item.fiscal_year: item.growth
+            for item in result.annual_fundamentals
+        },
+    }
 
 
 def _to_json(value: Any) -> str:

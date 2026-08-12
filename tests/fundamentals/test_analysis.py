@@ -1,14 +1,77 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import fields
 from unittest.mock import patch
 
-from stockagent.fundamentals import analysis
 from stockagent.data.errors import MissingFiscalYearsError, NoDataError
-from stockagent.financials import FinancialRecord
+from stockagent.financials import (
+    AnnualFundamentals,
+    CashFlowMetrics,
+    FinancialHealthMetrics,
+    FinancialRecord,
+    GrowthMetrics,
+    ProfitabilityMetrics,
+)
+from stockagent.fundamentals import analysis
 
 
 class AnalysisTest(unittest.TestCase):
+    def test_analyze_fundamentals_returns_ascending_immutable_annual_window(
+        self,
+    ) -> None:
+        records = [
+            FinancialRecord(
+                ticker="annualwindow",
+                company_name="Annual Window Inc.",
+                fiscal_year=2024,
+                revenue=120.0,
+                net_income=24.0,
+                operating_cash_flow=36.0,
+                capex=6.0,
+            ),
+            FinancialRecord(
+                ticker="annualwindow",
+                company_name="Annual Window Inc.",
+                fiscal_year=2023,
+                revenue=100.0,
+                net_income=20.0,
+                operating_cash_flow=30.0,
+                capex=5.0,
+            ),
+        ]
+
+        with (
+            patch("edgar.set_identity"),
+            patch("stockagent.data.providers.EdgarFinancialsProvider") as provider_type,
+        ):
+            provider_type.return_value.fetch_annual_records.return_value = records
+
+            result = analysis.analyze_fundamentals("annualwindow", 2)
+
+        self.assertEqual(result.ticker, "ANNUALWINDOW")
+        self.assertIsInstance(result.annual_fundamentals, tuple)
+        self.assertEqual(
+            [item.fiscal_year for item in result.annual_fundamentals],
+            [2023, 2024],
+        )
+        self.assertEqual(
+            [field.name for field in fields(result)],
+            ["ticker", "annual_fundamentals"],
+        )
+        for item in result.annual_fundamentals:
+            fiscal_year = item.fiscal_year
+            self.assertEqual(
+                {
+                    item.record.fiscal_year,
+                    item.profitability.fiscal_year,
+                    item.cash_flow.fiscal_year,
+                    item.financial_health.fiscal_year,
+                    item.growth.fiscal_year,
+                },
+                {fiscal_year},
+            )
+
     def test_fetch_financials_rejects_invalid_years(self) -> None:
         for years in (0, -1, 1.5, "3", True):
             with self.subTest(years=years):
@@ -140,7 +203,26 @@ class AnalysisTest(unittest.TestCase):
             ),
         )
 
-        metrics = analysis.analyze_valuation(records, price=40.0, market_cap=200.0)
+        annual_fundamentals = tuple(
+            AnnualFundamentals(
+                record=record,
+                profitability=ProfitabilityMetrics(
+                    fiscal_year=record.fiscal_year
+                ),
+                cash_flow=CashFlowMetrics(fiscal_year=record.fiscal_year),
+                financial_health=FinancialHealthMetrics(
+                    fiscal_year=record.fiscal_year
+                ),
+                growth=GrowthMetrics(fiscal_year=record.fiscal_year),
+            )
+            for record in records
+        )
+
+        metrics = analysis.analyze_valuation(
+            annual_fundamentals,
+            price=40.0,
+            market_cap=200.0,
+        )
 
         self.assertEqual(metrics.fiscal_year, 2024)
         self.assertEqual(metrics.pe_ratio, 20.0)
