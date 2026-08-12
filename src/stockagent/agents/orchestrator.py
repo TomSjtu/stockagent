@@ -70,23 +70,23 @@ StructuredOutputT = TypeVar("StructuredOutputT", bound=BaseModel)
 ProgressResultT = TypeVar("ProgressResultT")
 
 
-def build_analysis_graph(nodes: AnalysisNodes):
-    """Build the fixed dependency graph for one report analysis."""
-    graph = StateGraph(AnalysisState)
-    graph.add_node("industry", nodes.industry)
-    graph.add_node("fundamentals", nodes.fundamentals)
-    graph.add_node("valuation", nodes.valuation)
-    graph.add_node("risk", nodes.risk)
-    graph.add_node("synthesize", nodes.synthesize)
+def _build_analysis_workflow(nodes: AnalysisNodes) -> StateGraph:
+    """Register the fixed analysis topology without compiling the workflow."""
+    workflow = StateGraph(AnalysisState)
+    workflow.add_node("industry", nodes.industry)
+    workflow.add_node("fundamentals", nodes.fundamentals)
+    workflow.add_node("valuation", nodes.valuation)
+    workflow.add_node("risk", nodes.risk)
+    workflow.add_node("synthesize", nodes.synthesize)
 
     # 从 START 并行运行行业和基本面节点，再依次写入估值、风险和汇总叙事
-    graph.add_edge(START, "industry")
-    graph.add_edge(START, "fundamentals")
-    graph.add_edge(["industry", "fundamentals"], "valuation")
-    graph.add_edge("valuation", "risk")
-    graph.add_edge("risk", "synthesize")
-    graph.add_edge("synthesize", END)
-    return graph.compile()
+    workflow.add_edge(START, "industry")
+    workflow.add_edge(START, "fundamentals")
+    workflow.add_edge(["industry", "fundamentals"], "valuation")
+    workflow.add_edge("valuation", "risk")
+    workflow.add_edge("risk", "synthesize")
+    workflow.add_edge("synthesize", END)
+    return workflow
 
 
 def build_analysis_nodes(
@@ -494,7 +494,8 @@ def run_stock_analysis_agent(
 ) -> GeneratedReport:
     """Run the graph and return a nonempty report with its matched evidence bundle."""
     model = build_model(llm_config)
-    graph = build_analysis_graph(build_analysis_nodes(model, progress_reporter))
+    workflow = _build_analysis_workflow(build_analysis_nodes(model, progress_reporter))
+    graph = workflow.compile()
     try:
         result = graph.invoke({"ticker": ticker, "years": years})
     except StockAgentError:

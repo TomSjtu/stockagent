@@ -31,6 +31,14 @@ class FakeGraph:
         raise self.exc
 
 
+class FakeWorkflow:
+    def __init__(self, graph: FakeGraph) -> None:
+        self.graph = graph
+
+    def compile(self) -> FakeGraph:
+        return self.graph
+
+
 class AgentErrorsTest(unittest.TestCase):
     def test_agent_output_error_is_an_agent_error(self) -> None:
         self.assertTrue(issubclass(AgentOutputError, AgentError))
@@ -96,6 +104,7 @@ class AgentErrorsTest(unittest.TestCase):
             base_url="https://example.test/v1",
             model=DEFAULT_LLM_MODEL,
         )
+        workflow = FakeWorkflow(FakeGraph(TimeoutError("request timed out")))
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
@@ -104,8 +113,8 @@ class AgentErrorsTest(unittest.TestCase):
                 return_value="nodes",
             ),
             patch(
-                "stockagent.agents.orchestrator.build_analysis_graph",
-                return_value=FakeGraph(TimeoutError("request timed out")),
+                "stockagent.agents.orchestrator._build_analysis_workflow",
+                return_value=workflow,
             ),
         ):
             with self.assertRaises(LLMTimeoutError) as context:
@@ -125,6 +134,7 @@ class AgentErrorsTest(unittest.TestCase):
             base_url="https://example.test/v1",
             model=DEFAULT_LLM_MODEL,
         )
+        workflow = FakeWorkflow(FakeGraph(RuntimeError("bad response")))
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
@@ -133,8 +143,8 @@ class AgentErrorsTest(unittest.TestCase):
                 return_value="nodes",
             ),
             patch(
-                "stockagent.agents.orchestrator.build_analysis_graph",
-                return_value=FakeGraph(RuntimeError("bad response")),
+                "stockagent.agents.orchestrator._build_analysis_workflow",
+                return_value=workflow,
             ),
         ):
             with self.assertRaises(LLMResponseError):

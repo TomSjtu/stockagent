@@ -4,10 +4,12 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
+from langgraph.graph import StateGraph
+
 from stockagent.agents.orchestrator import (
     AnalysisNodes,
+    _build_analysis_workflow,
     _build_synthesize_node,
-    build_analysis_graph,
     build_analysis_nodes,
 )
 from stockagent.agents.state import (
@@ -38,9 +40,12 @@ from stockagent.report.delivery import deliver_report
 class AnalysisGraphTest(unittest.TestCase):
     def test_graph_runs_complete_analysis_data_flow(self) -> None:
         observed_inputs: dict[str, set[str]] = {}
+        runtime_service = object()
+        observed_runtime_services: list[object] = []
 
         def industry(state: dict) -> dict:
             observed_inputs["industry"] = set(state)
+            observed_runtime_services.append(runtime_service)
             return {
                 "industry": IndustryOutput(
                     narrative=f"{state['ticker']} industry",
@@ -50,6 +55,7 @@ class AnalysisGraphTest(unittest.TestCase):
 
         def fundamentals(state: dict) -> dict:
             observed_inputs["fundamentals"] = set(state)
+            observed_runtime_services.append(runtime_service)
             return {
                 "fundamentals": FundamentalsOutput(
                     narrative=f"{state['years']} years fundamentals",
@@ -91,7 +97,7 @@ class AnalysisGraphTest(unittest.TestCase):
                 )
             }
 
-        graph = build_analysis_graph(
+        workflow = _build_analysis_workflow(
             AnalysisNodes(
                 industry=industry,
                 fundamentals=fundamentals,
@@ -100,7 +106,35 @@ class AnalysisGraphTest(unittest.TestCase):
                 synthesize=synthesize,
             )
         )
+        self.assertIsInstance(workflow, StateGraph)
+        self.assertFalse(hasattr(workflow, "invoke"))
 
+        graph = workflow.compile()
+        graph_view = graph.get_graph()
+        self.assertEqual(
+            set(graph_view.nodes),
+            {
+                "__start__",
+                "industry",
+                "fundamentals",
+                "valuation",
+                "risk",
+                "synthesize",
+                "__end__",
+            },
+        )
+        self.assertEqual(
+            {(edge.source, edge.target) for edge in graph_view.edges},
+            {
+                ("__start__", "industry"),
+                ("__start__", "fundamentals"),
+                ("industry", "valuation"),
+                ("fundamentals", "valuation"),
+                ("valuation", "risk"),
+                ("risk", "synthesize"),
+                ("synthesize", "__end__"),
+            },
+        )
         result = graph.invoke({"ticker": "AAPL", "years": 3})
         delivery = deliver_report(result, report_date=date(2026, 7, 29))
 
@@ -137,6 +171,20 @@ class AnalysisGraphTest(unittest.TestCase):
                 "risk",
             },
         )
+        self.assertEqual(observed_runtime_services, [runtime_service, runtime_service])
+        self.assertEqual(
+            set(result),
+            {
+                "ticker",
+                "years",
+                "industry",
+                "fundamentals",
+                "valuation",
+                "risk",
+                "synthesis",
+            },
+        )
+        self.assertNotIn(runtime_service, result.values())
 
     def test_valuation_waits_for_both_upstreams_and_runs_once(self) -> None:
         valuation_inputs: list[set[str]] = []
@@ -186,7 +234,7 @@ class AnalysisGraphTest(unittest.TestCase):
                 )
             }
 
-        graph = build_analysis_graph(
+        workflow = _build_analysis_workflow(
             AnalysisNodes(
                 industry=industry,
                 fundamentals=fundamentals,
@@ -196,6 +244,7 @@ class AnalysisGraphTest(unittest.TestCase):
             )
         )
 
+        graph = workflow.compile()
         graph.invoke({"ticker": "AAPL", "years": 3})
 
         self.assertEqual(len(valuation_inputs), 1)
@@ -335,9 +384,10 @@ class ReportCompositionFlowTest(unittest.TestCase):
                 return_value=analysis,
             ),
         ):
-            graph = build_analysis_graph(
+            workflow = _build_analysis_workflow(
                 build_analysis_nodes(model, FakeProgressReporter())
             )
+            graph = workflow.compile()
             result = graph.invoke({"ticker": "aapl", "years": 2})
 
         delivery = deliver_report(result)
@@ -439,7 +489,7 @@ class ReportCompositionFlowTest(unittest.TestCase):
                 )
             }
 
-        graph = build_analysis_graph(
+        workflow = _build_analysis_workflow(
             AnalysisNodes(
                 industry=industry,
                 fundamentals=fundamentals,
@@ -452,6 +502,7 @@ class ReportCompositionFlowTest(unittest.TestCase):
             )
         )
 
+        graph = workflow.compile()
         result = graph.invoke({"ticker": "aapl", "years": 2})
 
         delivery = deliver_report(result)

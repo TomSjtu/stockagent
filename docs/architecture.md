@@ -81,8 +81,8 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 2. `app.run_stock_analysis()` 调用 `load_app_config()`；配置层读取 `.env`，统一加载 LLM、Tavily 和可覆盖的 EDGAR identity，并要求 LLM/Tavily 凭据。CLI 创建的进度上报器经应用层显式传入编排层。
 3. 应用层调用 `edgar.set_identity(config.edgar_identity)`，再进入 Agent 报告工作流。
 4. `agents.run_stock_analysis_agent()` 通过包级延迟导入边界调用真正的 orchestrator，避免普通模块导入时初始化重型依赖。
-5. `orchestrator` 通过 `LLMConfig` 显式参数创建 `ChatOpenAI`，将四个 Agent builder 和汇总节点组装为 `AnalysisNodes`；同一个 `ProgressReporter` 由各节点闭包捕获。
-6. `StateGraph` 以只有 `ticker`、`years` 的初始 State 同步启动。行业与基本面节点是两个起始分支；估值节点通过联合入边等待它们都返回。父图仍以一次性 `graph.invoke()` 调用，不消费图级流。
+5. `orchestrator` 通过 `LLMConfig` 显式参数创建 `ChatOpenAI`，将四个 Agent builder 和汇总节点组装为 `AnalysisNodes`；同一个 `ProgressReporter` 由各节点闭包捕获。私有 `_build_analysis_workflow()` 只注册这五个节点及固定依赖边，返回未编译的 `StateGraph`。
+6. `run_stock_analysis_agent()` 在调用侧编译 workflow，再以只有 `ticker`、`years` 的初始 State 同步启动。行业与基本面节点是两个起始分支；估值节点通过联合入边等待它们都返回。父图仍以一次性 `graph.invoke()` 调用，不消费图级流。
 7. 四个分析节点在内部调用 `agent.stream(..., stream_mode=["updates", "values", "messages"])`：`updates` 被翻译为工具进度事件，`messages` 只提供模型生成量；拿不到消息增量时，后台守护线程以耗时心跳维持活体反馈。最后一份 `values` 完整状态快照是 `structured_response` 的来源，增量内容本身不写入日志，也不用于重建业务状态。
 8. 行业、估值和风险 Agent 通过 `web_search()` 调用 Tavily；其 typed output 只保留实际采用的 `Evidence`，不会保存全部搜索结果。
 9. 基本面和估值 Agent 保留财务工具供各自叙事使用；工具通过 `fundamentals/analysis.py` 读取 EDGAR 数据，再由工具内 adapter 将年度基本面转换为兼容 JSON。该分析服务负责记录取数、LRU 缓存、连续财年窗口校验、年度基本面构造和 trailing 估值；EDGAR Provider 为匹配的年度记录附加可空 `SecFilingReference`，缺失 filing 元数据只记录 warning，不阻断财务记录。
@@ -206,7 +206,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | `src/stockagent/agents/valuation_agent.py` | 定义估值 prompt，构建搜索与估值计算工具 Agent。 | 返回含叙事、证据与声明市场输入的 `ValuationAgentOutput`；报告比率由编排层另行计算。 |
 | `src/stockagent/agents/risk_agent.py` | 定义风险 prompt，构建仅含搜索工具的 structured Agent。 | 消费上游 State 后返回 `RiskOutput`。 |
 | `src/stockagent/agents/progress.py` | 定义与呈现无关的 `ProgressReporter` 事件契约，解析 Agent 的工具与模型消息增量，并在拿不到模型增量时驱动耗时心跳。 | 由 orchestrator 消费流时调用；不导入 Rich 或其他终端库，中文阶段名未命中时回退到工具原名。 |
-| `src/stockagent/agents/orchestrator.py` | 核心编排：定义 `AnalysisNodes`、Graph 拓扑和五个节点，在节点内流式调用 Agent、从最后一份完整状态快照校验 output、以 State 参数调用 facts interface，并在 Graph 返回后调用报告交付 interface。 | 连接 Agent builder、progress、facts、State、模型、交付和错误模块；父图保持一次性调用，不消费工具返回文本，也不自行构造交付产物。 |
+| `src/stockagent/agents/orchestrator.py` | 核心编排：定义 `AnalysisNodes`、返回未编译 workflow 的固定 Graph 拓扑和五个节点，在节点内流式调用 Agent、从最后一份完整状态快照校验 output、以 State 参数调用 facts interface，并在 Graph 返回后调用报告交付 interface。 | 连接 Agent builder、progress、facts、State、模型、交付和错误模块；拓扑 builder 不创建 Agent 或编译 Graph，runner 保持一次性编译与调用，不消费工具返回文本，也不自行构造交付产物。 |
 
 ### 4.5 `src/stockagent/tools/`：给 LLM 的能力适配器
 
@@ -365,7 +365,7 @@ tests -> every production layer, but production code never imports tests
 
 ### 新增 Agent 或 Graph 节点
 
-必须同步修改 `agents/state.py` 的 output/State、对应 Agent builder、`AnalysisNodes`、`build_analysis_graph()` 的显式边、下游 prompt，以及 fake-node 图测试。不要用动态 registry 隐藏领域拓扑；节点依赖是业务规则的一部分。
+必须同步修改 `agents/state.py` 的 output/State、对应 Agent builder、`AnalysisNodes`、`_build_analysis_workflow()` 的显式边、下游 prompt，以及 fake-node 图测试。拓扑测试应自行编译 workflow，以保留调用侧选择编译参数的边界。不要用动态 registry 隐藏领域拓扑；节点依赖是业务规则的一部分。
 
 ### 调整确定性事实字段
 
