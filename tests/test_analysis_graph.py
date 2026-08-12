@@ -7,10 +7,9 @@ from unittest.mock import patch
 from langgraph.graph import StateGraph
 
 from stockagent.agents.orchestrator import (
+    AnalysisGraphSetup,
     AnalysisNodes,
     _build_analysis_workflow,
-    _build_synthesize_node,
-    build_analysis_nodes,
 )
 from stockagent.agents.state import (
     Evidence,
@@ -361,6 +360,7 @@ class ReportCompositionFlowTest(unittest.TestCase):
                 "investment_recommendation": "投资建议正文",
             }
         )
+        progress_reporter = FakeProgressReporter()
 
         with (
             patch(
@@ -384,14 +384,13 @@ class ReportCompositionFlowTest(unittest.TestCase):
                 return_value=analysis,
             ),
         ):
-            workflow = _build_analysis_workflow(
-                build_analysis_nodes(model, FakeProgressReporter())
-            )
+            workflow = AnalysisGraphSetup(model, progress_reporter).build()
             graph = workflow.compile()
             result = graph.invoke({"ticker": "aapl", "years": 2})
 
         delivery = deliver_report(result)
         markdown = delivery.markdown
+        self.assertNotIn(progress_reporter, result.values())
         self.assertIn("| 指标 | 2023 [^1] | 2024 [^2] |", markdown)
         self.assertIn("| 收入 | 1,250.0 | 2,000.0 |", markdown)
         self.assertIn("| 毛利率 | 40.0% | 45.0% |", markdown)
@@ -422,88 +421,104 @@ class ReportCompositionFlowTest(unittest.TestCase):
         )
         filing_2023 = self._filing(2023)
         filing_2024 = self._filing(2024)
-
-        def industry(_state: dict) -> dict:
-            return {
-                "industry": IndustryOutput(
+        annual_financials = [
+            AnnualFinancialSnapshot(
+                fiscal_year=2024,
+                revenue=2_000_000_000,
+                net_income=180_000_000,
+                operating_cash_flow=400_000_000,
+                capex=80_000_000,
+                free_cash_flow=320_000_000,
+                gross_margin=0.45,
+                net_margin=0.09,
+                revenue_growth=0.2,
+            ),
+            AnnualFinancialSnapshot(
+                fiscal_year=2023,
+                revenue=1_250_000_000,
+                net_income=100_000_000,
+                operating_cash_flow=250_000_000,
+                capex=50_000_000,
+                free_cash_flow=200_000_000,
+                gross_margin=0.4,
+                net_margin=0.08,
+                revenue_growth=None,
+            ),
+        ]
+        agent_results = {
+            "industry": {
+                "messages": [],
+                "structured_response": IndustryOutput(
                     narrative="行业正文 [industry-1]",
                     evidence=[
                         self._evidence("industry-1", "行业来源", "industry_analyst")
                     ],
-                )
-            }
-
-        def fundamentals(_state: dict) -> dict:
-            return {
-                "fundamentals": FundamentalsOutput(
+                ),
+            },
+            "fundamentals": {
+                "messages": [],
+                "structured_response": FundamentalsAgentOutput(
                     narrative="基本面正文 [sec-2024]",
                     concerns=[],
-                    annual_financials=[
-                        AnnualFinancialSnapshot(
-                            fiscal_year=2024,
-                            revenue=2_000_000_000,
-                            net_income=180_000_000,
-                            operating_cash_flow=400_000_000,
-                            capex=80_000_000,
-                            free_cash_flow=320_000_000,
-                            gross_margin=0.45,
-                            net_margin=0.09,
-                            revenue_growth=0.2,
-                        ),
-                        AnnualFinancialSnapshot(
-                            fiscal_year=2023,
-                            revenue=1_250_000_000,
-                            net_income=100_000_000,
-                            operating_cash_flow=250_000_000,
-                            capex=50_000_000,
-                            free_cash_flow=200_000_000,
-                            gross_margin=0.4,
-                            net_margin=0.08,
-                            revenue_growth=None,
-                        ),
-                    ],
-                    financial_filings=[filing_2024, filing_2023],
-                )
-            }
-
-        def valuation(_state: dict) -> dict:
-            return {
-                "valuation": ValuationOutput(
+                ),
+            },
+            "valuation": {
+                "messages": [],
+                "structured_response": ValuationAgentOutput(
                     narrative="估值正文 [valuation-1]",
-                    pe_ratio=20.0,
-                    pb_ratio=3.0,
-                    ps_ratio=5.0,
                     evidence=[
                         self._evidence("valuation-1", "估值来源", "valuation_analyst")
                     ],
-                )
-            }
-
-        def risk(_state: dict) -> dict:
-            return {
-                "risk": RiskOutput(
+                    market_inputs=MarketInputs(),
+                ),
+            },
+            "risk": {
+                "messages": [],
+                "structured_response": RiskOutput(
                     narrative="风险正文 [risk-1]",
                     overall_rating="中",
                     key_risks=[],
                     evidence=[self._evidence("risk-1", "风险来源", "risk_analyst")],
-                )
-            }
-
-        workflow = _build_analysis_workflow(
-            AnalysisNodes(
-                industry=industry,
-                fundamentals=fundamentals,
-                valuation=valuation,
-                risk=risk,
-                synthesize=_build_synthesize_node(
-                    model,
-                    FakeProgressReporter(),
                 ),
-            )
-        )
+            },
+        }
 
-        graph = workflow.compile()
-        result = graph.invoke({"ticker": "aapl", "years": 2})
+        with (
+            patch(
+                "stockagent.agents.orchestrator.build_industry_agent",
+                return_value=FakeAgent(agent_results["industry"]),
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_fundamentals_agent",
+                return_value=FakeAgent(agent_results["fundamentals"]),
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_valuation_agent",
+                return_value=FakeAgent(agent_results["valuation"]),
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_risk_agent",
+                return_value=FakeAgent(agent_results["risk"]),
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_fundamentals_facts",
+                return_value={
+                    "annual_financials": annual_financials,
+                    "financial_filings": [filing_2024, filing_2023],
+                },
+            ),
+            patch(
+                "stockagent.agents.orchestrator.build_valuation_facts",
+                return_value={
+                    "pe_ratio": 20.0,
+                    "pb_ratio": 3.0,
+                    "ps_ratio": 5.0,
+                },
+            ),
+        ):
+            workflow = AnalysisGraphSetup(model, FakeProgressReporter()).build()
+            graph = workflow.compile()
+            result = graph.invoke({"ticker": "aapl", "years": 2})
 
         delivery = deliver_report(result)
         markdown = delivery.markdown

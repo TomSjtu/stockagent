@@ -39,6 +39,14 @@ class FakeWorkflow:
         return self.graph
 
 
+class FakeSetup:
+    def __init__(self, workflow: FakeWorkflow) -> None:
+        self.workflow = workflow
+
+    def build(self) -> FakeWorkflow:
+        return self.workflow
+
+
 class AgentErrorsTest(unittest.TestCase):
     def test_agent_output_error_is_an_agent_error(self) -> None:
         self.assertTrue(issubclass(AgentOutputError, AgentError))
@@ -105,16 +113,13 @@ class AgentErrorsTest(unittest.TestCase):
             model=DEFAULT_LLM_MODEL,
         )
         workflow = FakeWorkflow(FakeGraph(TimeoutError("request timed out")))
+        setup = FakeSetup(workflow)
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
             patch(
-                "stockagent.agents.orchestrator.build_analysis_nodes",
-                return_value="nodes",
-            ),
-            patch(
-                "stockagent.agents.orchestrator._build_analysis_workflow",
-                return_value=workflow,
+                "stockagent.agents.orchestrator.AnalysisGraphSetup",
+                return_value=setup,
             ),
         ):
             with self.assertRaises(LLMTimeoutError) as context:
@@ -135,16 +140,13 @@ class AgentErrorsTest(unittest.TestCase):
             model=DEFAULT_LLM_MODEL,
         )
         workflow = FakeWorkflow(FakeGraph(RuntimeError("bad response")))
+        setup = FakeSetup(workflow)
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
             patch(
-                "stockagent.agents.orchestrator.build_analysis_nodes",
-                return_value="nodes",
-            ),
-            patch(
-                "stockagent.agents.orchestrator._build_analysis_workflow",
-                return_value=workflow,
+                "stockagent.agents.orchestrator.AnalysisGraphSetup",
+                return_value=setup,
             ),
         ):
             with self.assertRaises(LLMResponseError):
