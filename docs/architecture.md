@@ -52,11 +52,11 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 
 能力适配层（tools）
   web_search() -------------------------------> Tavily API
-  financial tools -> fundamentals/analysis.py -> data/providers -> SEC EDGAR
+  financial tools -> 兼容 JSON adapter -> fundamentals/analysis.py -> data/providers -> SEC EDGAR
 
 领域与分析层（financials + fundamentals）
-  FinancialRecord / Metrics 数据模型
-  fundamentals/analysis.py：取数、缓存、财年窗口校验、指标编排
+  FinancialRecord / AnnualFundamentals / Metrics 数据模型
+  fundamentals/analysis.py：取数、缓存、财年窗口校验、年度基本面聚合
   annual.py + growth.py + valuation.py：无 I/O 的纯函数公式，直读 FinancialRecord
 ```
 
@@ -68,10 +68,10 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 | 编排 | `agents/orchestrator.py`、`agents/progress.py`、各 Agent builder | Graph 拓扑、节点内流式 Agent 调用、进度事件契约与增量解析、工具错误扫描、facts interface 调用、LLM output 与确定性字段合并、汇总节点的叙事生成 | 终端渲染、解析工具 JSON、重复校验取数层不变量、直接解析 EDGAR 表格、构造或持久化报告 |
 | 报告交付 | `report/` | 在 Graph 返回后编排完整报告、单次聚合网页与 filing 证据、渲染引用、构造匹配的 Markdown 与 `EvidenceBundle`，并写入双文件产物 | Agent 调度、Graph State 写入、财务计算 |
 | 确定性事实处理 | `agents/facts.py` | 用股票代码与财年数直接调用确定性财务分析并投影 State 所需字段；估值另接收 LLM 声明的价格与市值 | 工具 JSON、LangChain 消息、LLM 调用、Graph State 写入、叙事语义和报告渲染 |
-| 工具适配 | `tools/` | 将搜索和确定性计算暴露给 Agent，统一为 JSON 文本工具结果 | 业务决策和跨节点状态 |
-| 确定性分析服务 | `fundamentals/analysis.py` | 取数、完整财年窗口校验、LRU 缓存、编排各指标计算和 trailing 估值 | LLM 提示词、HTTP 搜索；它不是只做公式计算的纯模块 |
+| 工具适配 | `tools/` | 将搜索和确定性计算暴露给 Agent；财务工具把年度基本面适配为兼容 JSON 文本 | 业务决策、跨节点状态和内部 Python 领域接口 |
+| 确定性分析服务 | `fundamentals/analysis.py` | 取数、完整财年窗口校验、LRU 缓存、构造不可错配的年度基本面窗口和 trailing 估值 | LLM 提示词、HTTP 搜索；它不是只做公式计算的纯模块 |
 | 数据适配 | `data/` | 把外部数据源转换为带可空 10-K 引用的 `FinancialRecord` | 指标计算和报告生成 |
-| 领域模型与计算 | `financials/`、`fundamentals/{annual,growth,valuation}.py` | 财务记录、指标 DTO 与直读 `FinancialRecord` 的无副作用公式 | 网络、环境变量、LLM |
+| 领域模型与计算 | `financials/`、`fundamentals/{annual,growth,valuation}.py` | 财务记录、年度基本面、报告快照、指标 DTO 与直读 `FinancialRecord` 的无副作用公式 | 网络、环境变量、LLM |
 | 横切能力 | `config.py`、`errors.py`、`observability.py`、`agents/llm.py` | 配置、错误边界、日志、模型客户端 | 业务流程编排 |
 | 验证 | `tests/` | 镜像生产模块，使用 fake/mocking 验证确定性行为 | 真实 LLM、EDGAR、Tavily 集成测试 |
 
@@ -85,8 +85,8 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 6. `StateGraph` 以只有 `ticker`、`years` 的初始 State 同步启动。行业与基本面节点是两个起始分支；估值节点通过联合入边等待它们都返回。父图仍以一次性 `graph.invoke()` 调用，不消费图级流。
 7. 四个分析节点在内部调用 `agent.stream(..., stream_mode=["updates", "values", "messages"])`：`updates` 被翻译为工具进度事件，`messages` 只提供模型生成量；拿不到消息增量时，后台守护线程以耗时心跳维持活体反馈。最后一份 `values` 完整状态快照是 `structured_response` 的来源，增量内容本身不写入日志，也不用于重建业务状态。
 8. 行业、估值和风险 Agent 通过 `web_search()` 调用 Tavily；其 typed output 只保留实际采用的 `Evidence`，不会保存全部搜索结果。
-9. 基本面和估值 Agent 保留财务工具供各自叙事使用；工具通过 `fundamentals/analysis.py` 读取 EDGAR 数据。该分析服务负责记录取数、LRU 缓存、连续财年窗口校验、指标编排和 trailing 估值；EDGAR Provider 为匹配的年度记录附加可空 `SecFilingReference`，缺失 filing 元数据只记录 warning，不阻断财务记录。
-10. 每个分析节点从最后一份完整状态快照校验 LLM 侧的局部 typed output，再由编排层用 State 中的 `ticker`、`years` 直接调用 `build_fundamentals_facts()` 或 `build_valuation_facts()`；估值调用还传入 LLM 在 `market_inputs` 中声明的 `price` 与 `market_cap`。编排层把两部分构造成完整 State 模型。工具返回文本和原始 JSON 均不进入 `AnalysisState`。
+9. 基本面和估值 Agent 保留财务工具供各自叙事使用；工具通过 `fundamentals/analysis.py` 读取 EDGAR 数据，再由工具内 adapter 将年度基本面转换为兼容 JSON。该分析服务负责记录取数、LRU 缓存、连续财年窗口校验、年度基本面构造和 trailing 估值；EDGAR Provider 为匹配的年度记录附加可空 `SecFilingReference`，缺失 filing 元数据只记录 warning，不阻断财务记录。
+10. 每个分析节点从最后一份完整状态快照校验 LLM 侧的局部 typed output，再由编排层用 State 中的 `ticker`、`years` 直接调用 `build_fundamentals_facts()` 或 `build_valuation_facts()`；两个 facts interface 都消费强类型年度基本面窗口，估值调用还传入 LLM 在 `market_inputs` 中声明的 `price` 与 `market_cap`。编排层把 LLM output 与确定性投影构造成完整 State 模型。工具返回文本和原始 JSON 均不进入 `AnalysisState`。
 11. 工具失败的 `updates` 会立即产生可见的失败事件，但不会中断流；流结束后，编排层仍按原有语义扫描完整状态快照中的 LangChain messages，并以同一错误类型阻止无效输出进入下游。
 12. 风险节点消费前三项 typed output；汇总节点消费四项 output，只调用一次结构化模型生成 `SynthesisOutput` 中的摘要与投资建议两个叙事片段，并以同样的消息增量机制上报生成进度。完整报告排版、证据聚合和引用渲染都不在该节点内发生。
 13. Graph 返回最终 `AnalysisState` 后，`run_stock_analysis_agent()` 在图外调用一次 `report.delivery.deliver_report()`。交付 module 解包四个分析 output 与 `SynthesisOutput`，以 `ReportComposer` 编排完整 Markdown，只聚合一次网页 Evidence 与年度 filing Evidence，再用同一清单渲染引用并构造唯一的 `EvidenceBundle`。引用 ID 直接来自这次渲染，因此“正文脚注 ⊆ 审计证据”由单次构造保证，不依赖两处代码重复算出相同结果。
@@ -96,7 +96,7 @@ StockAgent 是一个面向美股的命令行研究报告生成器。一次运行
 
 ### 3.1 确定性与生成式职责分离
 
-- EDGAR 记录归一化在 `data/` 完成；财务领域模型在 `financials/` 定义；取数、缓存、窗口校验和指标编排在 `fundamentals/analysis.py` 完成；财务公式在 `fundamentals/{annual,growth,valuation}.py` 中完成，直接读取 `FinancialRecord`，均可不调用 LLM 测试。
+- EDGAR 记录归一化在 `data/` 完成；`FinancialRecord`、`AnnualFundamentals` 和指标模型在 `financials/` 定义；取数、缓存、窗口校验和年度基本面构造在 `fundamentals/analysis.py` 完成；财务公式在 `fundamentals/{annual,growth,valuation}.py` 中完成，直接读取 `FinancialRecord`，均可不调用 LLM 测试。
 - LLM 负责搜索策略、叙事说明、来源选择、同行对比、风险判断，以及摘要与投资建议两个叙事片段；它只能为实际采用的外部事实返回结构化证据和内部标记。完整报告由确定性的报告交付层编排。
 - 基本面与估值都将 LLM schema 和 State 模型分开：`FundamentalsAgentOutput` 只含 `narrative`、`concerns`，`ValuationAgentOutput` 只含估值叙事、所选 evidence 与完整 `market_inputs`；对应的 State 模型再增加确定性字段。
 - `FundamentalsOutput.annual_financials` 和 `financial_filings` 的最终权威来源是编排层按本次 `ticker`、`years` 直接调用的确定性财务分析 module；基本面工具结果只服务于 Agent 叙事，不回流 State。
@@ -116,19 +116,23 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 
 两个 interface 的输入由编排代码直接给定，不接收 LLM output、LangChain messages 或工具 JSON 文本。基本面 interface 接收本次 State 的股票代码与财年数；估值 interface 在相同上下文之外，再接收 LLM 结构化输出声明的价格与市值。返回值只包含要合入完整 State 模型的确定性字段。
 
-基本面路径调用 `fundamentals.analysis.analyze_fundamentals(ticker, years)`，把强类型的年度记录、盈利能力、现金流和成长性结果投影为按财年升序排列的 `AnnualFinancialSnapshot`，并收集记录上已有的 filing。完整且连续的财年窗口、财年唯一性，以及 filing 与年度记录的配对都由 `fundamentals/analysis.py` 与取数层构造保证；facts module 不再重复实现上下文匹配、逐字段类型、重复、断档或错年配对校验。显式数值 `None` 原样传播，单年 filing 缺失也不会丢弃该年财务数据。
+基本面路径调用 `fundamentals.analysis.analyze_fundamentals(ticker, years)`，直接遍历按财年升序排列的 `AnnualFundamentals` 窗口，把每个聚合中的记录和指标投影为 `AnnualFinancialSnapshot`，并收集记录上已有的 filing。完整且连续的财年窗口、财年唯一性、记录与四类指标的财年一致性，以及 filing 与记录的配对都由 `fundamentals/analysis.py`、`AnnualFundamentals` 与取数层构造保证；facts module 不执行平行集合 join，也不重复实现上下文匹配、逐字段类型、重复、断档或错年配对校验。显式数值 `None` 原样传播，单年 filing 缺失也不会丢弃该年财务数据。
 
-估值路径先复用 `fundamentals.analysis.analyze_fundamentals(ticker, years)` 的年度记录，再把 LLM 声明的 `price`、`market_cap` 传给 `fundamentals.analysis.analyze_valuation(records, price, market_cap)`，只返回 PE/PB/PS。市场输入本身保留在 `ValuationAgentOutput`；其非空 `evidence_id` 必须指向该 Agent 已选择 evidence 的自洽性校验也归属于这个 LLM 侧模型，而不是 facts module。
+估值路径复用同一个年度基本面 interface，把完整窗口和 LLM 声明的 `price`、`market_cap` 传给 `fundamentals.analysis.analyze_valuation(annual_fundamentals, price, market_cap)`；估值分析从窗口选取最新财年的记录，只返回 PE/PB/PS。市场输入本身保留在 `ValuationAgentOutput`；其非空 `evidence_id` 必须指向该 Agent 已选择 evidence 的自洽性校验也归属于这个 LLM 侧模型，而不是 facts module。
+
+财务工具位于独立兼容 seam。`tools/financials.py` 将内部年度基本面窗口投影为既有 `ticker`、`records`、`profitability`、`cash_flow`、`financial_health`、`growth` JSON 形状，保持字段、层级、财年顺序和 `null` 语义；这组平行集合只存在于 LLM 工具边界，不是仓库内部 Python interface，也不参与 State 构造。
 
 依赖方向为 `orchestrator.py -> facts.py -> fundamentals/analysis.py -> data/providers + financials + fundamentals/*`；facts module 使用 `SecFilingReference` 收集 filing 元数据，并使用 `AnnualFinancialSnapshot` 作为原始年度字段与派生指标的横切投影。它不依赖 LangChain、不调用 LLM、不构建 LangGraph、不读写完整 `AnalysisState`，也不判断 narrative 的语义。orchestrator 保留 LangChain seam：它扫描明确的工具错误并校验 `structured_response`，但不再从消息中查找工具结果 content。
 
-这条 seam 没有修改给 LLM 使用的财务工具 JSON 格式、LangGraph 拓扑、报告 Markdown 格式、引用格式、CLI 或应用层 interface。当前实现也不包含报告质量验证、TTM、前瞻估值或新的估值工具合同；为什么确定性事实不应改回工具回流路径，见 [ADR 0001](adr/0001-deterministic-facts-at-source.md)。
+这些 seam 没有修改给 LLM 使用的财务工具 JSON 格式、LangGraph 拓扑、报告 Markdown 格式、引用格式、CLI 或应用层 interface。当前实现也不包含报告质量验证、TTM、前瞻估值或新的估值工具合同；为什么确定性事实不应改回工具回流路径，见 [ADR 0001](adr/0001-deterministic-facts-at-source.md)。
 
 ### 3.3 财务数据契约
 
 `FinancialRecord` 是外部财务数据进入领域层的唯一标准形状，覆盖利润表、资产负债表和现金流量表的核心年度字段。所有金额字段均允许为 `None`，以保留来源缺失事实；公式通过安全除法返回 `None`，而不是虚构数值。每个记录还可带 `SecFilingReference`，其中包含实际 10-K/10-K/A 的报告期、提交日、CIK、accession、主文档和 SEC Archive URL；未匹配到时该字段为 `None`，不改变计算接口。
 
-`fundamentals.analysis.fetch_financials()` 会将 ticker 规范化为大写，从容量为 32 的进程内 LRU 缓存中取记录，并要求以最新财年为结尾的连续窗口恰好包含 `years` 个年度。数据缺年会抛出 `MissingFiscalYearsError`，不会缩短分析窗口。`analyze_fundamentals()` 在同一服务中编排各类年度指标；`analyze_valuation()` 选择最新财年计算 trailing PE/PB/PS。连续窗口由分析服务保证；公式模块本身只依赖传入的 `FinancialRecord`——逐年公式接收单条记录，跨年成长性接收整窗记录列表，估值另加两个市场输入参数——自身不取数。
+`AnnualFundamentals` 聚合同一财年的一条 `FinancialRecord` 与盈利能力、现金流、财务健康、成长性四类指标，构造时拒绝任何财年错配，但允许记录字段和指标值为 `None`。它不等同于报告只选取部分字段的 `AnnualFinancialSnapshot`。
+
+`fundamentals.analysis.fetch_financials()` 会将 ticker 规范化为大写，从容量为 32 的进程内 LRU 缓存中取记录，并要求以最新财年为结尾的连续窗口恰好包含 `years` 个年度。数据缺年会抛出 `MissingFiscalYearsError`，不会缩短分析窗口。`analyze_fundamentals()` 只返回规范化 ticker 与按财年升序排列、不可增删的年度基本面窗口，不公开年度记录或四类指标的平行集合；`analyze_valuation()` 从同一窗口选择最新财年记录计算 trailing PE/PB/PS。公式模块本身只依赖传入的 `FinancialRecord`——逐年公式接收单条记录，跨年成长性接收整窗记录列表，估值另加两个市场输入参数——自身不取数。
 
 ### 3.4 Agent State 契约
 
@@ -175,7 +179,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | --- | --- |
 | `docs/architecture.md` | 本文：模块边界、执行流、契约、目录和测试索引。 |
 | `docs/adr/0001-deterministic-facts-at-source.md` | 记录确定性事实由编排层直接取得、不经 LLM 工具边界回流的决策与理由。 |
-| `docs/fundamentals.md` | 解释利润表、现金流量表、资产负债表和基本面分析概念，属于领域知识说明而非运行时模块。 |
+| `docs/fundamentals.md` | 解释年度基本面实现边界，以及利润表、现金流量表、资产负债表和基本面分析概念。 |
 
 ### 4.3 `src/stockagent/`：顶层应用模块
 
@@ -210,7 +214,7 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | --- | --- | --- |
 | `src/stockagent/tools/__init__.py` | 重新导出允许被 Agent 使用的搜索和财务工具。 | Agent modules 只从此包导入工具，形成清晰工具面。 |
 | `src/stockagent/tools/search.py` | 校验 Tavily key，调用 Tavily，并把原始结果裁剪成标题、URL、摘要、评分和发布日期 JSON。 | 被行业、估值、风险 Agent 调用。 |
-| `src/stockagent/tools/financials.py` | 将 `fundamentals.analysis` 的 dataclass 结果序列化为 JSON；提供估值和聚合基本面工具。 | 被基本面与估值 Agent 调用；不直接访问 EDGAR SDK。 |
+| `src/stockagent/tools/financials.py` | 将年度基本面窗口适配并序列化为既有 JSON 契约；提供估值和聚合基本面工具。 | 被基本面与估值 Agent 调用；不直接访问 EDGAR SDK，兼容 JSON 不作为内部 Python interface。 |
 
 ### 4.6 `src/stockagent/data/`：外部财务数据适配
 
@@ -227,15 +231,15 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 
 | 路径 | 作用 | 关系 |
 | --- | --- | --- |
-| `src/stockagent/financials/__init__.py` | 导出财务记录、年度快照、指标 dataclass 和 `SecFilingReference`。 | 领域计算、确定性分析服务、provider、编排层、报告层和测试的稳定导入面。 |
-| `src/stockagent/financials/models.py` | 定义 `FinancialRecord`、`AnnualFinancialSnapshot`、`SecFilingReference` 及 Profitability、CashFlow、FinancialHealth、Growth、Valuation 五类指标结果。 | 外部数据归一化的终点，也是跨层财务投影与纯计算的输入/输出。 |
+| `src/stockagent/financials/__init__.py` | 导出财务记录、年度基本面、年度快照、指标 dataclass 和 `SecFilingReference`。 | 领域计算、确定性分析服务、provider、编排层、报告层和测试的稳定导入面。 |
+| `src/stockagent/financials/models.py` | 定义 `FinancialRecord`、`AnnualFundamentals`、`AnnualFinancialSnapshot`、`SecFilingReference` 及 Profitability、CashFlow、FinancialHealth、Growth、Valuation 五类指标结果。 | 外部数据归一化的终点，也是同财年事实聚合、跨层财务投影与纯计算的输入/输出。 |
 
 ### 4.8 `src/stockagent/fundamentals/`：确定性分析服务与指标计算
 
 | 路径 | 作用 | 关系 |
 | --- | --- | --- |
 | `src/stockagent/fundamentals/__init__.py` | 重新导出五个公式入口函数；当前只有公式层测试从这里导入，生产代码一律直接导入 `analysis` 子模块。 | 取数与编排由同包的 `analysis.py` 负责。 |
-| `src/stockagent/fundamentals/analysis.py` | 确定性年度分析服务：规范化 ticker，读取 EDGAR provider，缓存并校验连续财年窗口，以财年为键构造各类指标索引和 trailing 估值。 | 被 `tools/financials.py` 与 `agents/facts.py` 调用；依赖 `data.providers`、`financials` 和同包三个公式模块。 |
+| `src/stockagent/fundamentals/analysis.py` | 确定性年度分析服务：规范化 ticker，读取 EDGAR provider，缓存并校验连续财年窗口，构造升序年度基本面窗口并计算 trailing 估值。 | 被 `tools/financials.py` 与 `agents/facts.py` 调用；只公开聚合窗口，不公开记录与指标的平行结果集合。 |
 | `src/stockagent/fundamentals/annual.py` | 逐年独立的公式：盈利能力、现金流、财务健康三个类别入口，另公开自由现金流口径 `free_cash_flow()`，模块内私有 `_safe_divide()` 统一本模块的缺失值语义。 | 直读 `FinancialRecord`；`growth.py` 从此处导入自由现金流口径。 |
 | `src/stockagent/fundamentals/growth.py` | 跨年公式：计算收入、净利润、自由现金流的同比增长和相对窗口首年的 CAGR。 | 整窗接收 `FinancialRecord` 列表；对单年、缺失值、零或负基数返回 `None`。 |
 | `src/stockagent/fundamentals/valuation.py` | 用最新财年记录和市场输入计算 trailing PE/PB/PS；PE 可从 `price / EPS` 回退到 `market_cap / net_income`。 | 唯一接收财报之外市场输入的公式模块；不从价格推断市值。 |
@@ -261,13 +265,13 @@ build_valuation_facts(ticker, years, price, market_cap) -> _ValuationFacts
 | `tests/test_app.py` | 应用层连接配置、进度上报器、Agent 和报告写入器。 |
 | `tests/test_config.py` | 必需环境变量、默认模型、可选 EDGAR identity 与应用配置组装。 |
 | `tests/test_observability.py` | Rich 日志处理器、时间精度、第三方日志等级及非终端输出无控制字符。 |
-| `tests/fundamentals/test_analysis.py` | ticker/年份校验、连续财年窗口、缓存、无数据错误和最新财年估值选择。 |
-| `tests/test_financial_models.py` | `FinancialRecord` 接收 filing 引用及 filing 日期序列化。 |
-| `tests/test_financial_tools.py` | 财务工具 JSON 序列化、估值市场输入与缺失原因。 |
+| `tests/fundamentals/test_analysis.py` | ticker/年份校验、连续财年窗口、年度基本面唯一 interface、缓存、无数据错误和最新财年估值选择。 |
+| `tests/test_financial_models.py` | 年度基本面财年一致性与缺失值语义，以及 `FinancialRecord` 的 filing 引用和日期序列化。 |
+| `tests/test_financial_tools.py` | 年度基本面到旧 JSON 契约的 adapter、估值市场输入与缺失原因。 |
 | `tests/test_search_tool.py` | Tavily 调用参数与裁剪后的搜索接口。 |
 | `tests/test_agent_builders.py` | 四个 Agent builder 的工具集合、工具面一致性不变量、prompt 和 `ToolStrategy` 输出合同。 |
 | `tests/test_agent_state.py` | LLM schema 与 State 模型拆分、确定性字段默认值、证据 ID 唯一性、市场输入证据关联、年度 filing、风险评级和 State 必填/可选字段。 |
-| `tests/test_deterministic_facts.py` | 两个公开 facts interface 的类型化投影：年度快照字段来源、缺失值、排序、filing 缺失，以及声明市场输入驱动的估值比率。 |
+| `tests/test_deterministic_facts.py` | 两个公开 facts interface 消费年度基本面后的类型化投影：年度快照字段来源、缺失值、排序、filing 缺失，以及声明市场输入驱动的估值比率。 |
 | `tests/test_analysis_graph.py` | 真实 Graph builder 的完整数据流、联合 fan-in，以及从取数层到最终 Markdown 财务表和 SEC 脚注的穿透行为。 |
 | `tests/test_analysis_nodes.py` | 真实形状流事件到进度上报的转换、最后一份状态快照取值、工具失败语义、模型增量与心跳，以及 facts interface、节点 State 更新和汇总提示词。 |
 | `tests/test_agent_progress.py` | Rich 实时区域的完成/失败日志、异常清理、并发刷新锁和非终端降级。 |
@@ -304,7 +308,7 @@ cli -> Rich Live + observability -> RichHandler
                     |-> agents/progress（事件解析与心跳）
                     |-> agents/llm
                     |-> Agent builders -> tools/search -> Tavily
-                    |                  +-> tools/financials
+                    |                  +-> tools/financials（兼容 JSON adapter）
                     |                                      \
                     |-> facts ------------------------------> fundamentals/analysis
                     |                                          |-> data/providers -> EDGAR
@@ -343,7 +347,7 @@ tests -> every production layer, but production code never imports tests
 
 ### 新增指标
 
-先在 `financials/models.py` 增加结果字段或新指标 dataclass；再在对应公式模块直接读取标准化年度财务记录 `FinancialRecord` 计算，并由 `fundamentals/analysis.py` 选择性编排。
+先在 `financials/models.py` 增加结果字段或新指标 dataclass；再在对应公式模块直接读取标准化年度财务记录 `FinancialRecord` 计算，并由 `fundamentals/analysis.py` 将结果纳入同财年的 `AnnualFundamentals`。
 
 新指标放哪个模块由计算形状决定：
 
@@ -365,7 +369,7 @@ tests -> every production layer, but production code never imports tests
 
 ### 调整确定性事实字段
 
-先在确定性财务分析的 typed interface 与对应 State/报告投影中明确字段所有权和缺失语义，再修改 `agents/facts.py` 的显式投影，并优先通过 `tests/test_deterministic_facts.py` 验证公开 interface。orchestrator 只负责传入 State 上下文和显式市场输入、合并 LLM output 与确定性字段，不应消费工具返回文本。季度/TTM 应扩展确定性财务分析 module 的 interface，再由 facts module 投影；不要为编排层新增工具 JSON 契约、手写解析器和畸形 JSON 测试。若字段属于 narrative 质量或前瞻估值，应先设计独立合同，不能把尚未落地的能力当作当前 facts module 职责。
+先在 `AnnualFundamentals`、确定性财务分析的 typed interface 与对应 State/报告投影中明确字段所有权和缺失语义，再修改 `agents/facts.py` 的显式投影，并优先通过 `tests/test_deterministic_facts.py` 验证公开 interface。orchestrator 只负责传入 State 上下文和显式市场输入、合并 LLM output 与确定性字段，不应消费工具返回文本。若 LLM 叙事也需要该字段，另在 `tools/financials.py` 的兼容 adapter 中投影，不能让工具 JSON 反向成为领域接口。季度/TTM 应扩展确定性财务分析 module 的聚合 interface，再由 facts module 投影；不要为编排层新增工具 JSON 契约、手写解析器和畸形 JSON 测试。若字段属于 narrative 质量或前瞻估值，应先设计独立合同，不能把尚未落地的能力当作当前 facts module 职责。
 
 ### 调整错误与可观测性
 

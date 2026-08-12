@@ -2,6 +2,14 @@
 
 按“基本面类型”分类，并明确每一类主要依赖哪张报表、要看哪些指标、以及如何交叉验证。
 
+## 年度基本面与实现边界
+
+“年度基本面（Annual Fundamentals）”表示同一公司、同一完整财年的标准化财务记录，以及同年盈利能力、现金流、财务健康和成长性四类确定性指标。构造年度基本面时会拒绝任何财年错配；来源数值缺失仍保留为 `None`，不会被当作结构错误。
+
+`fundamentals.analysis.analyze_fundamentals()` 返回按财年升序排列、不可增删的年度基本面窗口。它不再公开年度记录与四类指标的平行 Python 集合，也不把报告字段选择放进领域模型。年度基本面不等同于 `AnnualFinancialSnapshot`：后者由 `agents/facts.py` 在报告 facts seam 上从年度基本面投影，只保留 State 和报告需要的财务字段；同一 seam 另行收集记录上的 filing。
+
+给基本面和估值 Agent 使用的财务工具在 `tools/financials.py` 维护独立兼容 adapter，把年度基本面转换为既有 JSON 字段和层级。这份 JSON 只服务 LLM 叙事；写入 `AnalysisState` 的确定性事实始终通过 typed facts interface 直接取得，不从工具 JSON 或 LangChain message 反解析。
+
 ## 一张总表
 
 | 基本面类型 | 主要看哪张报表 | 辅助报表 | 笔记中的代表指标 |

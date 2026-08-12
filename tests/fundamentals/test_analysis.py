@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import fields
 from unittest.mock import patch
 
 from stockagent.data.errors import MissingFiscalYearsError, NoDataError
@@ -54,6 +55,10 @@ class AnalysisTest(unittest.TestCase):
             [item.fiscal_year for item in result.annual_fundamentals],
             [2023, 2024],
         )
+        self.assertEqual(
+            [field.name for field in fields(result)],
+            ["ticker", "annual_fundamentals"],
+        )
         for item in result.annual_fundamentals:
             fiscal_year = item.fiscal_year
             self.assertEqual(
@@ -66,14 +71,6 @@ class AnalysisTest(unittest.TestCase):
                 },
                 {fiscal_year},
             )
-            self.assertIs(result.profitability[fiscal_year], item.profitability)
-            self.assertIs(result.cash_flow[fiscal_year], item.cash_flow)
-            self.assertIs(
-                result.financial_health[fiscal_year],
-                item.financial_health,
-            )
-            self.assertIs(result.growth[fiscal_year], item.growth)
-        self.assertEqual(result.records, [item.record for item in result.annual_fundamentals])
 
     def test_fetch_financials_rejects_invalid_years(self) -> None:
         for years in (0, -1, 1.5, "3", True):
