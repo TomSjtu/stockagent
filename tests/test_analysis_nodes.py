@@ -15,9 +15,11 @@ from langchain_core.outputs import (
     ChatGenerationChunk,
     ChatResult,
 )
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import StateGraph
 
 from stockagent.agents.errors import AgentOutputError
-from stockagent.agents.orchestrator import build_analysis_nodes
+from stockagent.agents.orchestrator import AnalysisGraphSetup
 from stockagent.agents.state import (
     FundamentalsAgentOutput,
     FundamentalsOutput,
@@ -164,7 +166,151 @@ class FakeProgressReporter:
         self.events.append(("model_output", agent, produced_characters))
 
 
+def _valid_agent_result(name: str) -> dict[str, object]:
+    if name == "industry":
+        output = IndustryOutput(narrative="industry", evidence=[])
+    elif name == "fundamentals":
+        output = FundamentalsAgentOutput(
+            narrative="fundamentals",
+            concerns=[],
+        )
+    elif name == "valuation":
+        output = ValuationAgentOutput(
+            narrative="valuation",
+            market_inputs=MarketInputs(),
+        )
+    elif name == "risk":
+        output = RiskOutput(
+            narrative="risk",
+            overall_rating="低",
+            key_risks=[],
+            evidence=[],
+        )
+    else:
+        raise AssertionError(f"unknown analysis agent: {name}")
+
+    return {"messages": [], "structured_response": output}
+
+
+class _WorkflowHarness:
+    _NEXT_NODE = {
+        "valuation": "risk",
+        "risk": "synthesize",
+        "synthesize": None,
+    }
+    _PREDECESSOR = {
+        "valuation": "fundamentals",
+        "risk": "valuation",
+        "synthesize": "risk",
+    }
+    _OUTPUT_KEYS = {
+        "industry": "industry",
+        "fundamentals": "fundamentals",
+        "valuation": "valuation",
+        "risk": "risk",
+        "synthesize": "synthesis",
+    }
+
+    def __init__(
+        self,
+        workflow: StateGraph,
+        agents: dict[str, FakeAgent],
+    ) -> None:
+        self._workflow = workflow
+        self._agents = agents
+
+    def industry(self, state: dict[str, object]) -> dict[str, object]:
+        return self._invoke_initial_node("industry", state)
+
+    def fundamentals(self, state: dict[str, object]) -> dict[str, object]:
+        return self._invoke_initial_node("fundamentals", state)
+
+    def valuation(self, state: dict[str, object]) -> dict[str, object]:
+        return self._invoke_node("valuation", state)
+
+    def risk(self, state: dict[str, object]) -> dict[str, object]:
+        return self._invoke_node("risk", state)
+
+    def synthesize(self, state: dict[str, object]) -> dict[str, object]:
+        return self._invoke_node("synthesize", state)
+
+    def invoke(self, state: dict[str, object]) -> dict[str, object]:
+        self._prepare_non_target_agents("synthesize")
+        return self._workflow.compile().invoke(state)
+
+    def _invoke_initial_node(
+        self,
+        target: str,
+        state: dict[str, object],
+    ) -> dict[str, object]:
+        self._prepare_non_target_agents(target)
+        graph = self._workflow.compile(interrupt_before=["valuation"])
+        result = graph.invoke(state)
+        output_key = self._OUTPUT_KEYS[target]
+        return {output_key: result[output_key]}
+
+    def _invoke_node(
+        self,
+        target: str,
+        state: dict[str, object],
+    ) -> dict[str, object]:
+        self._prepare_non_target_agents(target)
+        next_node = self._NEXT_NODE[target]
+        interrupt_before = [target]
+        if next_node is not None:
+            interrupt_before.append(next_node)
+        graph = self._workflow.compile(
+            checkpointer=InMemorySaver(),
+            interrupt_before=interrupt_before,
+        )
+        config = {"configurable": {"thread_id": target}}
+        graph.invoke(
+            {
+                "ticker": state["ticker"],
+                "years": state["years"],
+            },
+            config,
+        )
+        snapshot = graph.get_state(config)
+        if target not in snapshot.next:
+            raise AssertionError(f"workflow did not pause before {target}")
+        resume_config = graph.update_state(
+            snapshot.config,
+            state,
+            as_node=self._PREDECESSOR[target],
+        )
+        result = graph.invoke(None, resume_config)
+        output_key = self._OUTPUT_KEYS[target]
+        return {output_key: result[output_key]}
+
+    def _prepare_non_target_agents(self, target: str) -> None:
+        for name, agent in self._agents.items():
+            if name != target and agent.result == {} and agent.values is None:
+                agent.result = _valid_agent_result(name)
+
+
 class AnalysisNodesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        fundamentals_facts = patch(
+            "stockagent.agents.orchestrator.build_fundamentals_facts",
+            return_value={
+                "annual_financials": [],
+                "financial_filings": [],
+            },
+        )
+        valuation_facts = patch(
+            "stockagent.agents.orchestrator.build_valuation_facts",
+            return_value={
+                "pe_ratio": None,
+                "pb_ratio": None,
+                "ps_ratio": None,
+            },
+        )
+        fundamentals_facts.start()
+        valuation_facts.start()
+        self.addCleanup(fundamentals_facts.stop)
+        self.addCleanup(valuation_facts.stop)
+
     def _build_nodes(
         self,
         *,
@@ -176,7 +322,7 @@ class AnalysisNodesTest(unittest.TestCase):
             "summary": "摘要",
             "investment_recommendation": "投资建议",
         },
-    ) -> tuple[object, dict[str, FakeAgent], FakeModel]:
+    ) -> tuple[_WorkflowHarness, dict[str, FakeAgent], FakeModel]:
         agents = {
             "industry": FakeAgent(industry_result),
             "fundamentals": FakeAgent(fundamentals_result),
@@ -204,9 +350,70 @@ class AnalysisNodesTest(unittest.TestCase):
                 return_value=agents["risk"],
             ),
         ):
-            nodes = build_analysis_nodes(model, self.progress_reporter)
+            workflow = AnalysisGraphSetup(model, self.progress_reporter).build()
+            nodes = _WorkflowHarness(workflow, agents)
 
         return nodes, agents, model
+
+    def test_setup_builds_all_nodes_and_returns_uncompiled_workflow(self) -> None:
+        model = FakeModel(
+            {
+                "summary": "摘要",
+                "investment_recommendation": "投资建议",
+            }
+        )
+        progress_reporter = FakeProgressReporter()
+        agents = {
+            "industry": FakeAgent({}),
+            "fundamentals": FakeAgent({}),
+            "valuation": FakeAgent({}),
+            "risk": FakeAgent({}),
+        }
+
+        with (
+            patch(
+                "stockagent.agents.orchestrator.build_industry_agent",
+                return_value=agents["industry"],
+            ) as build_industry,
+            patch(
+                "stockagent.agents.orchestrator.build_fundamentals_agent",
+                return_value=agents["fundamentals"],
+            ) as build_fundamentals,
+            patch(
+                "stockagent.agents.orchestrator.build_valuation_agent",
+                return_value=agents["valuation"],
+            ) as build_valuation,
+            patch(
+                "stockagent.agents.orchestrator.build_risk_agent",
+                return_value=agents["risk"],
+            ) as build_risk,
+        ):
+            workflow = AnalysisGraphSetup(model, progress_reporter).build()
+
+        self.assertIsInstance(workflow, StateGraph)
+        self.assertFalse(hasattr(workflow, "invoke"))
+        graph_view = workflow.compile().get_graph()
+        self.assertEqual(
+            set(graph_view.nodes),
+            {
+                "__start__",
+                "industry",
+                "fundamentals",
+                "valuation",
+                "risk",
+                "synthesize",
+                "__end__",
+            },
+        )
+        for builder in [
+            build_industry,
+            build_fundamentals,
+            build_valuation,
+            build_risk,
+        ]:
+            builder.assert_called_once_with(model)
+        self.assertEqual(model.output_type, SynthesisOutput)
+        self.assertEqual(model.structured_output_method, "function_calling")
 
     def test_industry_node_returns_local_typed_update(self) -> None:
         output = IndustryOutput(narrative="Industry", evidence=[])
@@ -331,8 +538,7 @@ class AnalysisNodesTest(unittest.TestCase):
         self.assertNotIn("公司毛利率改善", repr(self.progress_reporter.events))
         self.assertFalse(
             any(
-                event[:3]
-                == ("tool_started", "industry_analyst", "IndustryOutput")
+                event[:3] == ("tool_started", "industry_analyst", "IndustryOutput")
                 for event in self.progress_reporter.events
             )
         )
@@ -451,7 +657,13 @@ class AnalysisNodesTest(unittest.TestCase):
         result = nodes.industry({"ticker": "aapl", "years": 3})
 
         self.assertEqual(result, {"industry": output})
-        tool_events = self.progress_reporter.events[1:-1]
+        tool_events = [
+            event
+            for event in self.progress_reporter.events
+            if len(event) > 1
+            and event[1] == "industry_analyst"
+            and event[0] in {"tool_started", "tool_finished", "tool_failed"}
+        ]
         self.assertEqual(
             tool_events[0],
             (
@@ -556,8 +768,15 @@ class AnalysisNodesTest(unittest.TestCase):
             str(raised.exception),
             "industry_analyst tool web_search failed: search failed",
         )
+        industry_tool_events = [
+            event
+            for event in self.progress_reporter.events
+            if len(event) > 1
+            and event[1] == "industry_analyst"
+            and event[0] in {"tool_started", "tool_finished", "tool_failed"}
+        ]
         self.assertEqual(
-            self.progress_reporter.events[1],
+            industry_tool_events[0],
             (
                 "tool_failed",
                 "industry_analyst",
@@ -566,7 +785,7 @@ class AnalysisNodesTest(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            self.progress_reporter.events[2],
+            industry_tool_events[1],
             (
                 "tool_finished",
                 "industry_analyst",
@@ -776,27 +995,35 @@ class AnalysisNodesTest(unittest.TestCase):
             }
         )
         progress_reporter = FakeProgressReporter()
-        fake_agent = FakeAgent({})
+        agents = {
+            "industry": FakeAgent({}),
+            "fundamentals": FakeAgent({}),
+            "valuation": FakeAgent({}),
+            "risk": FakeAgent({}),
+        }
 
         with (
             patch(
                 "stockagent.agents.orchestrator.build_industry_agent",
-                return_value=fake_agent,
+                return_value=agents["industry"],
             ),
             patch(
                 "stockagent.agents.orchestrator.build_fundamentals_agent",
-                return_value=fake_agent,
+                return_value=agents["fundamentals"],
             ),
             patch(
                 "stockagent.agents.orchestrator.build_valuation_agent",
-                return_value=fake_agent,
+                return_value=agents["valuation"],
             ),
             patch(
                 "stockagent.agents.orchestrator.build_risk_agent",
-                return_value=fake_agent,
+                return_value=agents["risk"],
             ),
         ):
-            nodes = build_analysis_nodes(model, progress_reporter)
+            nodes = _WorkflowHarness(
+                AnalysisGraphSetup(model, progress_reporter).build(),
+                agents,
+            )
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -830,27 +1057,35 @@ class AnalysisNodesTest(unittest.TestCase):
             fragments=[first_fragment, second_fragment],
         )
         progress_reporter = FakeProgressReporter()
-        fake_agent = FakeAgent({})
+        agents = {
+            "industry": FakeAgent({}),
+            "fundamentals": FakeAgent({}),
+            "valuation": FakeAgent({}),
+            "risk": FakeAgent({}),
+        }
 
         with (
             patch(
                 "stockagent.agents.orchestrator.build_industry_agent",
-                return_value=fake_agent,
+                return_value=agents["industry"],
             ),
             patch(
                 "stockagent.agents.orchestrator.build_fundamentals_agent",
-                return_value=fake_agent,
+                return_value=agents["fundamentals"],
             ),
             patch(
                 "stockagent.agents.orchestrator.build_valuation_agent",
-                return_value=fake_agent,
+                return_value=agents["valuation"],
             ),
             patch(
                 "stockagent.agents.orchestrator.build_risk_agent",
-                return_value=fake_agent,
+                return_value=agents["risk"],
             ),
         ):
-            nodes = build_analysis_nodes(model, progress_reporter)
+            nodes = _WorkflowHarness(
+                AnalysisGraphSetup(model, progress_reporter).build(),
+                agents,
+            )
 
         result = nodes.synthesize(
             {
@@ -881,9 +1116,7 @@ class AnalysisNodesTest(unittest.TestCase):
             },
         )
         output_events = [
-            event
-            for event in progress_reporter.events
-            if event[0] == "model_output"
+            event for event in progress_reporter.events if event[0] == "model_output"
         ]
         self.assertEqual(
             output_events,
@@ -976,8 +1209,6 @@ class AnalysisNodesTest(unittest.TestCase):
                 ),
             },
         )
-        state: dict[str, object] = {"ticker": "AAPL", "years": 3}
-
         with (
             patch(
                 "stockagent.agents.orchestrator.build_fundamentals_facts",
@@ -995,11 +1226,7 @@ class AnalysisNodesTest(unittest.TestCase):
                 },
             ),
         ):
-            state.update(nodes.industry(state))
-            state.update(nodes.fundamentals(state))
-            state.update(nodes.valuation(state))
-            state.update(nodes.risk(state))
-            state.update(nodes.synthesize(state))
+            state = nodes.invoke({"ticker": "AAPL", "years": 3})
 
         expected_agents = [
             "industry_analyst",
@@ -1009,13 +1236,33 @@ class AnalysisNodesTest(unittest.TestCase):
             "synthesize",
         ]
         self.assertEqual(len(self.progress_reporter.events), 10)
-        for index, agent in enumerate(expected_agents):
-            started = self.progress_reporter.events[index * 2]
-            finished = self.progress_reporter.events[index * 2 + 1]
+        for agent in expected_agents:
+            lifecycle_events = [
+                event
+                for event in self.progress_reporter.events
+                if len(event) > 1
+                and event[1] == agent
+                and event[0] in {"agent_started", "agent_finished"}
+            ]
+            self.assertEqual(len(lifecycle_events), 2)
+            started, finished = lifecycle_events
             self.assertEqual(started, ("agent_started", agent))
             self.assertEqual(finished[:2], ("agent_finished", agent))
             self.assertIsInstance(finished[2], float)
             self.assertGreaterEqual(finished[2], 0.0)
+        self.assertEqual(
+            set(state),
+            {
+                "ticker",
+                "years",
+                "industry",
+                "fundamentals",
+                "valuation",
+                "risk",
+                "synthesis",
+            },
+        )
+        self.assertNotIn(self.progress_reporter, state.values())
 
 
 if __name__ == "__main__":

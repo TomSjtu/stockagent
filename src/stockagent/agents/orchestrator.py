@@ -70,241 +70,223 @@ StructuredOutputT = TypeVar("StructuredOutputT", bound=BaseModel)
 ProgressResultT = TypeVar("ProgressResultT")
 
 
-def build_analysis_graph(nodes: AnalysisNodes):
-    """Build the fixed dependency graph for one report analysis."""
-    graph = StateGraph(AnalysisState)
-    graph.add_node("industry", nodes.industry)
-    graph.add_node("fundamentals", nodes.fundamentals)
-    graph.add_node("valuation", nodes.valuation)
-    graph.add_node("risk", nodes.risk)
-    graph.add_node("synthesize", nodes.synthesize)
+def _build_analysis_workflow(nodes: AnalysisNodes) -> StateGraph:
+    """Register the fixed analysis topology without compiling the workflow."""
+    workflow = StateGraph(AnalysisState)
+    workflow.add_node("industry", nodes.industry)
+    workflow.add_node("fundamentals", nodes.fundamentals)
+    workflow.add_node("valuation", nodes.valuation)
+    workflow.add_node("risk", nodes.risk)
+    workflow.add_node("synthesize", nodes.synthesize)
 
     # 从 START 并行运行行业和基本面节点，再依次写入估值、风险和汇总叙事
-    graph.add_edge(START, "industry")
-    graph.add_edge(START, "fundamentals")
-    graph.add_edge(["industry", "fundamentals"], "valuation")
-    graph.add_edge("valuation", "risk")
-    graph.add_edge("risk", "synthesize")
-    graph.add_edge("synthesize", END)
-    return graph.compile()
+    workflow.add_edge(START, "industry")
+    workflow.add_edge(START, "fundamentals")
+    workflow.add_edge(["industry", "fundamentals"], "valuation")
+    workflow.add_edge("valuation", "risk")
+    workflow.add_edge("risk", "synthesize")
+    workflow.add_edge("synthesize", END)
+    return workflow
 
 
-def build_analysis_nodes(
-    model: BaseChatModel,
-    progress_reporter: ProgressReporter,
-) -> AnalysisNodes:
-    """Create the typed node implementations bound to one language model."""
-    return AnalysisNodes(
-        industry=_build_industry_node(
-            build_industry_agent(model),
-            progress_reporter,
-        ),
-        fundamentals=_build_fundamentals_node(
-            build_fundamentals_agent(model),
-            progress_reporter,
-        ),
-        valuation=_build_valuation_node(
-            build_valuation_agent(model),
-            progress_reporter,
-        ),
-        risk=_build_risk_node(
-            build_risk_agent(model),
-            progress_reporter,
-        ),
-        synthesize=_build_synthesize_node(model, progress_reporter),
-    )
+class AnalysisGraphSetup:
+    """Assemble the analysis workflow for one model and progress-reporter pair."""
 
+    def __init__(
+        self,
+        model: BaseChatModel,
+        progress_reporter: ProgressReporter,
+    ) -> None:
+        self._model = model
+        self._progress_reporter = progress_reporter
 
-def _build_industry_node(
-    agent: Any,
-    progress_reporter: ProgressReporter,
-) -> StateNode:
-    """Build a node that invokes the industry agent and writes its output to state."""
+    def build(self) -> StateGraph:
+        """Create all analysis nodes and return their uncompiled workflow."""
+        return _build_analysis_workflow(
+            AnalysisNodes(
+                industry=self._build_industry_node(),
+                fundamentals=self._build_fundamentals_node(),
+                valuation=self._build_valuation_node(),
+                risk=self._build_risk_node(),
+                synthesize=self._build_synthesize_node(),
+            )
+        )
 
-    def industry(state: AnalysisState) -> dict[str, IndustryOutput]:
-        def run() -> dict[str, IndustryOutput]:
-            output = _invoke_structured_agent(
-                agent,
+    def _build_industry_node(self) -> StateNode:
+        """Build a node that invokes the industry agent and writes its output."""
+        agent = build_industry_agent(self._model)
+
+        def industry(state: AnalysisState) -> dict[str, IndustryOutput]:
+            def run() -> dict[str, IndustryOutput]:
+                output = _invoke_structured_agent(
+                    agent,
+                    agent_name="industry_analyst",
+                    payload=_agent_payload(
+                        "请分析 "
+                        f"{state['ticker'].upper()} 最近 {state['years']} 个财年的行业趋势、"
+                        "竞争格局、市场地位和主要挑战。"
+                    ),
+                    output_type=IndustryOutput,
+                    progress_reporter=self._progress_reporter,
+                )
+                return {"industry": output}
+
+            return _run_with_progress(
+                progress_reporter=self._progress_reporter,
                 agent_name="industry_analyst",
-                payload=_agent_payload(
-                    "请分析 "
-                    f"{state['ticker'].upper()} 最近 {state['years']} 个财年的行业趋势、"
-                    "竞争格局、市场地位和主要挑战。"
-                ),
-                output_type=IndustryOutput,
-                progress_reporter=progress_reporter,
+                operation=run,
             )
-            return {"industry": output}
 
-        return _run_with_progress(
-            progress_reporter=progress_reporter,
-            agent_name="industry_analyst",
-            operation=run,
-        )
+        return industry
 
-    return industry
+    def _build_fundamentals_node(self) -> StateNode:
+        """Build a node that invokes the fundamentals agent and writes its output."""
+        agent = build_fundamentals_agent(self._model)
 
+        def fundamentals(state: AnalysisState) -> dict[str, FundamentalsOutput]:
+            def run() -> dict[str, FundamentalsOutput]:
+                output = _invoke_structured_agent(
+                    agent,
+                    agent_name="fundamentals_analyst",
+                    payload=_agent_payload(
+                        "请分析 "
+                        f"{state['ticker'].upper()} 最近 {state['years']} 个财年的盈利能力、"
+                        "现金流、财务健康和成长性。"
+                    ),
+                    output_type=FundamentalsAgentOutput,
+                    progress_reporter=self._progress_reporter,
+                )
+                facts = build_fundamentals_facts(state["ticker"], state["years"])
+                return {
+                    "fundamentals": FundamentalsOutput(
+                        narrative=output.narrative,
+                        concerns=output.concerns,
+                        **facts,
+                    )
+                }
 
-def _build_fundamentals_node(
-    agent: Any,
-    progress_reporter: ProgressReporter,
-) -> StateNode:
-    """Build a node that invokes the fundamentals agent and writes its output to state."""
-
-    def fundamentals(state: AnalysisState) -> dict[str, FundamentalsOutput]:
-        def run() -> dict[str, FundamentalsOutput]:
-            output = _invoke_structured_agent(
-                agent,
+            return _run_with_progress(
+                progress_reporter=self._progress_reporter,
                 agent_name="fundamentals_analyst",
-                payload=_agent_payload(
-                    "请分析 "
-                    f"{state['ticker'].upper()} 最近 {state['years']} 个财年的盈利能力、"
-                    "现金流、财务健康和成长性。"
-                ),
-                output_type=FundamentalsAgentOutput,
-                progress_reporter=progress_reporter,
+                operation=run,
             )
-            facts = build_fundamentals_facts(state["ticker"], state["years"])
-            return {
-                "fundamentals": FundamentalsOutput(
-                    narrative=output.narrative,
-                    concerns=output.concerns,
-                    **facts,
+
+        return fundamentals
+
+    def _build_valuation_node(self) -> StateNode:
+        """Build a node that invokes the valuation agent and writes its output."""
+        agent = build_valuation_agent(self._model)
+
+        def valuation(state: AnalysisState) -> dict[str, ValuationOutput]:
+            def run() -> dict[str, ValuationOutput]:
+                output = _invoke_structured_agent(
+                    agent,
+                    agent_name="valuation_analyst",
+                    payload=_agent_payload(
+                        "请基于以下结构化上游分析评估 "
+                        f"{state['ticker'].upper()} 最近 {state['years']} 个财年的估值。\n\n"
+                        f"行业分析：\n{state['industry'].model_dump_json(indent=2)}\n\n"
+                        f"基本面分析：\n{state['fundamentals'].model_dump_json(indent=2)}"
+                    ),
+                    output_type=ValuationAgentOutput,
+                    progress_reporter=self._progress_reporter,
                 )
-            }
+                facts = build_valuation_facts(
+                    state["ticker"],
+                    state["years"],
+                    price=output.market_inputs.price,
+                    market_cap=output.market_inputs.market_cap,
+                )
+                return {
+                    "valuation": ValuationOutput(
+                        narrative=output.narrative,
+                        evidence=output.evidence,
+                        market_inputs=output.market_inputs,
+                        **facts,
+                    )
+                }
 
-        return _run_with_progress(
-            progress_reporter=progress_reporter,
-            agent_name="fundamentals_analyst",
-            operation=run,
-        )
-
-    return fundamentals
-
-
-def _build_valuation_node(
-    agent: Any,
-    progress_reporter: ProgressReporter,
-) -> StateNode:
-    """Build a node that invokes the valuation agent and writes its output to state."""
-
-    def valuation(state: AnalysisState) -> dict[str, ValuationOutput]:
-        def run() -> dict[str, ValuationOutput]:
-            output = _invoke_structured_agent(
-                agent,
+            return _run_with_progress(
+                progress_reporter=self._progress_reporter,
                 agent_name="valuation_analyst",
-                payload=_agent_payload(
-                    "请基于以下结构化上游分析评估 "
-                    f"{state['ticker'].upper()} 最近 {state['years']} 个财年的估值。\n\n"
-                    f"行业分析：\n{state['industry'].model_dump_json(indent=2)}\n\n"
-                    f"基本面分析：\n{state['fundamentals'].model_dump_json(indent=2)}"
-                ),
-                output_type=ValuationAgentOutput,
-                progress_reporter=progress_reporter,
+                operation=run,
             )
-            facts = build_valuation_facts(
-                state["ticker"],
-                state["years"],
-                price=output.market_inputs.price,
-                market_cap=output.market_inputs.market_cap,
-            )
-            return {
-                "valuation": ValuationOutput(
-                    narrative=output.narrative,
-                    evidence=output.evidence,
-                    market_inputs=output.market_inputs,
-                    **facts,
+
+        return valuation
+
+    def _build_risk_node(self) -> StateNode:
+        """Build a node that invokes the risk agent and writes its output."""
+        agent = build_risk_agent(self._model)
+
+        def risk(state: AnalysisState) -> dict[str, RiskOutput]:
+            def run() -> dict[str, RiskOutput]:
+                output = _invoke_structured_agent(
+                    agent,
+                    agent_name="risk_analyst",
+                    payload=_agent_payload(
+                        "请基于以下结构化上游分析评估 "
+                        f"{state['ticker'].upper()} 的财务、运营、行业和估值风险。\n\n"
+                        f"行业分析：\n{state['industry'].model_dump_json(indent=2)}\n\n"
+                        f"基本面分析：\n{state['fundamentals'].model_dump_json(indent=2)}\n\n"
+                        f"估值分析：\n{state['valuation'].model_dump_json(indent=2)}"
+                    ),
+                    output_type=RiskOutput,
+                    progress_reporter=self._progress_reporter,
                 )
-            }
+                return {"risk": output}
 
-        return _run_with_progress(
-            progress_reporter=progress_reporter,
-            agent_name="valuation_analyst",
-            operation=run,
-        )
-
-    return valuation
-
-
-def _build_risk_node(
-    agent: Any,
-    progress_reporter: ProgressReporter,
-) -> StateNode:
-    """Build a node that invokes the risk agent and writes its output to state."""
-
-    def risk(state: AnalysisState) -> dict[str, RiskOutput]:
-        def run() -> dict[str, RiskOutput]:
-            output = _invoke_structured_agent(
-                agent,
+            return _run_with_progress(
+                progress_reporter=self._progress_reporter,
                 agent_name="risk_analyst",
-                payload=_agent_payload(
-                    "请基于以下结构化上游分析评估 "
-                    f"{state['ticker'].upper()} 的财务、运营、行业和估值风险。\n\n"
-                    f"行业分析：\n{state['industry'].model_dump_json(indent=2)}\n\n"
-                    f"基本面分析：\n{state['fundamentals'].model_dump_json(indent=2)}\n\n"
-                    f"估值分析：\n{state['valuation'].model_dump_json(indent=2)}"
-                ),
-                output_type=RiskOutput,
-                progress_reporter=progress_reporter,
+                operation=run,
             )
-            return {"risk": output}
 
-        return _run_with_progress(
-            progress_reporter=progress_reporter,
-            agent_name="risk_analyst",
-            operation=run,
+        return risk
+
+    def _build_synthesize_node(self) -> StateNode:
+        """Build a node that generates summary and recommendation fragments."""
+        # OpenAI-compatible endpoints may ignore response_format=json_schema and
+        # return plain text. Tool calling is already required by the analysis agents.
+        structured_model = self._model.with_structured_output(
+            SynthesisOutput,
+            method="function_calling",
         )
+        model_stream = _build_structured_model_stream(structured_model)
 
-    return risk
+        def synthesize(state: AnalysisState) -> dict[str, SynthesisOutput]:
+            def run() -> dict[str, SynthesisOutput]:
+                response = _invoke_structured_model(
+                    model_stream,
+                    [
+                        {
+                            "role": "user",
+                            "content": (
+                                "请只生成摘要和投资建议两个中文 Markdown 正文片段。不要生成整篇"
+                                "报告、一级或二级标题、财务表、数据口径、免责声明或参考来源；这些内容"
+                                "将由报告编排器固定生成。\n\n"
+                                "引用规则：可以复用上游正文已有的内部证据标记，例如 [industry-1]、"
+                                "[valuation-1]、[risk-1] 和 [sec-2024]；不得自行发明或改写 URL、"
+                                "标题或证据 ID。\n\n"
+                                f"行业分析：\n{state['industry'].model_dump_json(indent=2)}\n\n"
+                                f"基本面分析：\n{state['fundamentals'].model_dump_json(indent=2)}\n\n"
+                                f"估值分析：\n{state['valuation'].model_dump_json(indent=2)}\n\n"
+                                f"风险评估：\n{state['risk'].model_dump_json(indent=2)}"
+                            ),
+                        }
+                    ],
+                    agent_name="synthesize",
+                    progress_reporter=self._progress_reporter,
+                )
+                synthesis = _extract_synthesis_output(response)
+                return {"synthesis": synthesis}
 
-
-def _build_synthesize_node(
-    model: BaseChatModel,
-    progress_reporter: ProgressReporter,
-) -> StateNode:
-    """Build a node that generates summary and recommendation fragments."""
-    # OpenAI-compatible endpoints may ignore response_format=json_schema and
-    # return plain text. Tool calling is already required by the analysis agents.
-    structured_model = model.with_structured_output(
-        SynthesisOutput,
-        method="function_calling",
-    )
-    model_stream = _build_structured_model_stream(structured_model)
-
-    def synthesize(state: AnalysisState) -> dict[str, SynthesisOutput]:
-        def run() -> dict[str, SynthesisOutput]:
-            response = _invoke_structured_model(
-                model_stream,
-                [
-                    {
-                        "role": "user",
-                        "content": (
-                            "请只生成摘要和投资建议两个中文 Markdown 正文片段。不要生成整篇"
-                            "报告、一级或二级标题、财务表、数据口径、免责声明或参考来源；这些内容"
-                            "将由报告编排器固定生成。\n\n"
-                            "引用规则：可以复用上游正文已有的内部证据标记，例如 [industry-1]、"
-                            "[valuation-1]、[risk-1] 和 [sec-2024]；不得自行发明或改写 URL、"
-                            "标题或证据 ID。\n\n"
-                            f"行业分析：\n{state['industry'].model_dump_json(indent=2)}\n\n"
-                            f"基本面分析：\n{state['fundamentals'].model_dump_json(indent=2)}\n\n"
-                            f"估值分析：\n{state['valuation'].model_dump_json(indent=2)}\n\n"
-                            f"风险评估：\n{state['risk'].model_dump_json(indent=2)}"
-                        ),
-                    }
-                ],
+            return _run_with_progress(
+                progress_reporter=self._progress_reporter,
                 agent_name="synthesize",
-                progress_reporter=progress_reporter,
+                operation=run,
             )
-            synthesis = _extract_synthesis_output(response)
-            return {"synthesis": synthesis}
 
-        return _run_with_progress(
-            progress_reporter=progress_reporter,
-            agent_name="synthesize",
-            operation=run,
-        )
-
-    return synthesize
+        return synthesize
 
 
 def _build_structured_model_stream(structured_model: Any) -> Any:
@@ -494,7 +476,8 @@ def run_stock_analysis_agent(
 ) -> GeneratedReport:
     """Run the graph and return a nonempty report with its matched evidence bundle."""
     model = build_model(llm_config)
-    graph = build_analysis_graph(build_analysis_nodes(model, progress_reporter))
+    workflow = AnalysisGraphSetup(model, progress_reporter).build()
+    graph = workflow.compile()
     try:
         result = graph.invoke({"ticker": ticker, "years": years})
     except StockAgentError:

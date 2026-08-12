@@ -28,6 +28,26 @@ class FakeGraph:
         return self.result
 
 
+class FakeWorkflow:
+    def __init__(self, graph: FakeGraph) -> None:
+        self.graph = graph
+        self.compile_count = 0
+
+    def compile(self) -> FakeGraph:
+        self.compile_count += 1
+        return self.graph
+
+
+class FakeSetup:
+    def __init__(self, workflow: FakeWorkflow) -> None:
+        self.workflow = workflow
+        self.build_count = 0
+
+    def build(self) -> FakeWorkflow:
+        self.build_count += 1
+        return self.workflow
+
+
 class OrchestratorRunnerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.llm_config = LLMConfig(
@@ -74,19 +94,17 @@ class OrchestratorRunnerTest(unittest.TestCase):
                 ),
             }
         )
+        workflow = FakeWorkflow(graph)
+        setup = FakeSetup(workflow)
 
         with (
             patch(
                 "stockagent.agents.orchestrator.build_model", return_value="model"
             ) as build_model,
             patch(
-                "stockagent.agents.orchestrator.build_analysis_nodes",
-                return_value="nodes",
-            ) as build_nodes,
-            patch(
-                "stockagent.agents.orchestrator.build_analysis_graph",
-                return_value=graph,
-            ) as build_graph,
+                "stockagent.agents.orchestrator.AnalysisGraphSetup",
+                return_value=setup,
+            ) as setup_type,
         ):
             report = run_stock_analysis_agent(
                 "nvda",
@@ -101,8 +119,9 @@ class OrchestratorRunnerTest(unittest.TestCase):
         self.assertEqual(report.evidence_bundle.evidence, [evidence])
         self.assertEqual(report.evidence_bundle.cited_evidence_ids, ["industry-1"])
         build_model.assert_called_once_with(self.llm_config)
-        build_nodes.assert_called_once_with("model", progress_reporter)
-        build_graph.assert_called_once_with("nodes")
+        setup_type.assert_called_once_with("model", progress_reporter)
+        self.assertEqual(setup.build_count, 1)
+        self.assertEqual(workflow.compile_count, 1)
         self.assertEqual(graph.initial_state, {"ticker": "nvda", "years": 3})
 
     def test_run_stock_analysis_agent_rejects_missing_synthesis(self) -> None:
@@ -125,16 +144,14 @@ class OrchestratorRunnerTest(unittest.TestCase):
                 ),
             }
         )
+        workflow = FakeWorkflow(graph)
+        setup = FakeSetup(workflow)
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
             patch(
-                "stockagent.agents.orchestrator.build_analysis_nodes",
-                return_value="nodes",
-            ),
-            patch(
-                "stockagent.agents.orchestrator.build_analysis_graph",
-                return_value=graph,
+                "stockagent.agents.orchestrator.AnalysisGraphSetup",
+                return_value=setup,
             ),
         ):
             with self.assertRaisesRegex(AgentOutputError, "synthesis"):
@@ -192,16 +209,14 @@ class OrchestratorRunnerTest(unittest.TestCase):
                 ),
             }
         )
+        workflow = FakeWorkflow(graph)
+        setup = FakeSetup(workflow)
 
         with (
             patch("stockagent.agents.orchestrator.build_model", return_value="model"),
             patch(
-                "stockagent.agents.orchestrator.build_analysis_nodes",
-                return_value="nodes",
-            ),
-            patch(
-                "stockagent.agents.orchestrator.build_analysis_graph",
-                return_value=graph,
+                "stockagent.agents.orchestrator.AnalysisGraphSetup",
+                return_value=setup,
             ),
         ):
             report = run_stock_analysis_agent(
